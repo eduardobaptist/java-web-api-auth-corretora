@@ -1,0 +1,703 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: java-web-api
+meta:
+  id: wrk_3e5e2a9234ee4d2e835f506ebf6cedeb
+  created: 1780442281724
+  modified: 1788909920214
+  description: ""
+collection:
+  - name: auth
+    meta:
+      id: fld_1ac6205419c64f2a9f08a628ac562e30
+      created: 1788911019199
+      modified: 1793142754425
+      sortKey: -1788911019199
+      description: ""
+    children:
+      - url: localhost:8080/user
+        name: /user
+        meta:
+          id: req_405a6687d69c47b2bdc989cba8f0be52
+          created: 1788308515938
+          modified: 1793142813488
+          isPrivate: false
+          description: ""
+          sortKey: -1788911032449
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+            	"nome":"Eduardo",
+            	"email":"eduardo@teste.com",
+            	"senha": "abc",
+            	"role":"ADMIN"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/user/2
+        name: /user/{id}
+        meta:
+          id: req_6dd8d93ecde84c65988101eba3558b93
+          created: 1788909706702
+          modified: 1793142870144
+          isPrivate: false
+          description: ""
+          sortKey: -1788911032424
+        method: PUT
+        body:
+          mimeType: application/json
+          text: |-
+            {
+            	"nome":"Eduardo alterado",
+            	"email":"eduardo@teste.com",
+            	"senha": "abc",
+            	"role":"BASIC"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/user/6
+        name: /user/{id}
+        meta:
+          id: req_7c6824a4605846ba921e15503e65a547
+          created: 1788909800130
+          modified: 1788913099936
+          isPrivate: false
+          description: ""
+          sortKey: -1788911032374
+        method: DELETE
+        headers:
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/user/
+        name: /user/
+        meta:
+          id: req_9c66be03b38f4e2fa82cd0dfd9b14b90
+          created: 1788909828863
+          modified: 1788911039102
+          isPrivate: false
+          description: ""
+          sortKey: -1788911032524
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/user/2
+        name: user/{id}
+        meta:
+          id: req_65de65b8874c44e69c8393c025d3c4c8
+          created: 1788909871190
+          modified: 1793142843210
+          isPrivate: false
+          description: ""
+          sortKey: -1788911032474
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/auth/login
+        name: /auth/login
+        meta:
+          id: req_8c943d1c620444048ddf8b5a6bb3e448
+          created: 1793142056133
+          modified: 1793142903591
+          isPrivate: false
+          description: ""
+          sortKey: -1793142056133
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+            	"email": "eduardo@teste.com",
+            	"senha": "abc"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+    headers:
+      - name: Authorization
+        value: Bearer {{ _.token }}
+        description: ""
+        disabled: false
+  - name: bairro
+    meta:
+      id: fld_2a8ce7f8ee3c40b8a076a0df15044d64
+      created: 1790116410236
+      modified: 1793142743980
+      sortKey: -1790116410236
+      description: ""
+    children:
+      - url: localhost:8080/bairros
+        name: bairros
+        meta:
+          id: req_4f9c87a3ef054b3f80d0ef34ab3013ca
+          created: 1790116413606
+          modified: 1790117963160
+          isPrivate: false
+          description: ""
+          sortKey: -1790116413606
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+            	"nome": "Nossa Senhora de Fátima",
+            	"cidade": "Panambi",
+            	"estado": "RS",
+            	"cepFinal": "9828000"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/bairros/bairros-page?page=0&size=5&sort=id,DESC
+        name: bairros/bairros-page
+        meta:
+          id: req_5c1a0d12fbe0493c97cd55b54a59b5e4
+          created: 1790117481907
+          modified: 1790117818757
+          isPrivate: false
+          description: ""
+          sortKey: -1790117481907
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+    headers:
+      - name: Authorization
+        value: Bearer {{ _.token }}
+        description: ""
+        disabled: false
+  - name: tipos-imoveis
+    meta:
+      id: fld_abc1a3680a4f4e9e90cf0157747d0899
+      created: 1790119667024
+      modified: 1793142733700
+      sortKey: -1790119667024
+      description: ""
+    children:
+      - url: localhost:8080/tipos-imoveis
+        name: tipos-imoveis
+        meta:
+          id: req_775e507532064d3ba2dd765aea166756
+          created: 1790119670139
+          modified: 1790119825259
+          isPrivate: false
+          description: ""
+          sortKey: -1790119670139
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+            	"nome": "Casa geminada",
+            	"descricao": "Onde a gente mora!!"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/tipos-imoveis
+        name: tipos-imoveis
+        meta:
+          id: req_02af49e612b04dada3cec099388ec657
+          created: 1790119758356
+          modified: 1790119774797
+          isPrivate: false
+          description: ""
+          sortKey: -1790118576023
+        method: GET
+        body:
+          mimeType: application/json
+          text: ""
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/tipos-imoveis/1
+        name: tipos-imoveis/{id}
+        meta:
+          id: req_0e0ea93374e44585999bac7ecc4a579c
+          created: 1790119786131
+          modified: 1790119788595
+          isPrivate: false
+          description: ""
+          sortKey: -1790118028965
+        method: GET
+        body:
+          mimeType: application/json
+          text: ""
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/tipos-imoveis/2
+        name: tipos-imoveis/{id}
+        meta:
+          id: req_a5fc9b31947c4268865ada4938c2492e
+          created: 1790119802389
+          modified: 1790120011904
+          isPrivate: false
+          description: ""
+          sortKey: -1790117755436
+        method: DELETE
+        body:
+          mimeType: application/json
+          text: ""
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/tipos-imoveis/2
+        name: tipos-imoveis/{id}
+        meta:
+          id: req_e8c8fa74b08641418cbb3792b1af70c7
+          created: 1790119849515
+          modified: 1790119997052
+          isPrivate: false
+          description: ""
+          sortKey: -1790117892200.5
+        method: PUT
+        body:
+          mimeType: application/json
+          text: |-
+            {
+            	"nome": "Apartamento",
+            	"descricao": "test2"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/tipos-imoveis/tipos-imoveis-page
+        name: tipos-imoveis/{id}
+        meta:
+          id: req_69bf0f1830334dd09376390ff908812f
+          created: 1790119965321
+          modified: 1790119973409
+          isPrivate: false
+          description: ""
+          sortKey: -1790117823818.25
+        method: GET
+        body:
+          mimeType: application/json
+          text: ""
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+    headers:
+      - name: Authorization
+        value: Bearer {{ _.token }}
+        description: ""
+        disabled: false
+  - name: imoveis
+    meta:
+      id: fld_3f09d2fce8c14c568e9d42b91f51b46b
+      created: 1790728321187
+      modified: 1793142699086
+      sortKey: -1790728321187
+      description: ""
+    children:
+      - url: localhost:8080/imoveis
+        name: imoveis
+        meta:
+          id: req_372d036139ca438d8985e209f63dd4a9
+          created: 1790728333431
+          modified: 1790728408584
+          isPrivate: false
+          description: ""
+          sortKey: -1790728333431
+        method: POST
+        body:
+          mimeType: application/json
+          text: >
+            {
+              "titulo": "Casa ampla com piscina",
+              "descricao": "Excelente casa em bairro tranquilo, próximo a escolas e comércios.",
+              "precoVenda": 850000.00,
+              "precoAluguel": 3500.00,
+              "finalidade": "Residencial",
+              "status": "Disponível",
+              "dormitorios": 3,
+              "banheiros": 2,
+              "garagem": 2,
+              "areaTotal": 300.50,
+              "areaConstruida": 180.75,
+              "endereco": "Rua das Flores",
+              "numero": "123",
+              "complemento": "Casa 02",
+              "cep": "12345-678",
+              "caracteristicas": "Piscina, Churrasqueira, Jardim",
+              "destaque": true,
+              "tipoImovel": {
+                "id": 1
+              },
+              "bairro": {
+                "id": 1
+              }
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/imoveis
+        name: imoveis
+        meta:
+          id: req_c1bbb660cb0543188ef4126407481c2d
+          created: 1791328725793
+          modified: 1791328771548
+          isPrivate: false
+          description: ""
+          sortKey: -1791328725793
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: localhost:8080/imoveis/sabermais/1
+        name: New Request
+        meta:
+          id: req_cac927b130d04be7b4d7b0d9d1880d6e
+          created: 1791937774596
+          modified: 1791938215354
+          isPrivate: false
+          description: ""
+          sortKey: -1791937774596
+        method: POST
+        body:
+          mimeType: application/json
+          text: >-
+            {
+            	"nome": "Eduardo Baptista",
+            	"email": "eduardo.34000@aluno.iffar.edu.br",
+            	"telefone": "+5555997238098",
+            	"mensagem": "Olá! Me manda uma mensagem no wpp pra saber melhor as alternativas de financiamento de vcs."
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.3.1
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - name: fotos
+        meta:
+          id: fld_9ca4dc3806af4849ac9924d5da400fa5
+          created: 1791328758907
+          modified: 1791328758907
+          sortKey: -1791328758907
+          description: ""
+        children:
+          - url: localhost:8080/fotos
+            name: fotos
+            meta:
+              id: req_617ee1faba2a45c395fe8b6787966e41
+              created: 1791328774200
+              modified: 1791333702805
+              isPrivate: false
+              description: ""
+              sortKey: -1791328774200
+            method: POST
+            body:
+              mimeType: multipart/form-data
+              params:
+                - name: arquivo
+                  value: ""
+                  description: ""
+                  disabled: false
+                  fileName: /home/eduardo/Downloads/download.jpg
+                  type: file
+                - name: imovelId
+                  value: "1"
+                  description: ""
+                  disabled: false
+            headers:
+              - name: Content-Type
+                value: multipart/form-data
+              - name: User-Agent
+                value: insomnia/12.3.1
+                description: ""
+                disabled: false
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+          - url: localhost:8080/fotos
+            name: fotos
+            meta:
+              id: req_c97b0d6f83d04a60a34d02d7ff89f31a
+              created: 1791333705475
+              modified: 1791334182808
+              isPrivate: false
+              description: ""
+              sortKey: -1791333705475
+            method: PUT
+            body:
+              mimeType: multipart/form-data
+              params:
+                - name: arquivo
+                  value: ""
+                  description: ""
+                  disabled: false
+                  fileName: /home/eduardo/Downloads/casa.jpeg
+                  type: file
+                - name: fotoId
+                  value: "202"
+                  description: ""
+                  disabled: false
+            headers:
+              - name: Content-Type
+                value: multipart/form-data
+              - name: User-Agent
+                value: insomnia/12.3.1
+                description: ""
+                disabled: false
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+          - url: localhost:8080/fotos/202
+            name: New Request
+            meta:
+              id: req_3eeafe32e4b243b6bb41c3bbd6e5839a
+              created: 1791334243225
+              modified: 1791334256269
+              isPrivate: false
+              description: ""
+              sortKey: -1791334243225
+            method: DELETE
+            headers:
+              - name: User-Agent
+                value: insomnia/12.3.1
+                description: ""
+                disabled: false
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+    headers:
+      - name: Authorization
+        value: Bearer {{ _.token }}
+        description: ""
+        disabled: false
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_0ed6ad58426c591da62d97ac4379ca6ad999aa7d
+    created: 1780442281748
+    modified: 1780442281748
+  cookies:
+    - id: 2aac6104-2ac9-41dc-9527-938a34b429eb
+      key: foo
+      value: bar
+      domain: domain.com
+      path: /
+      secure: false
+      httpOnly: false
+environments:
+  name: Base Environment
+  meta:
+    id: env_0ed6ad58426c591da62d97ac4379ca6ad999aa7d
+    created: 1780442281737
+    modified: 1793142914935
+    isPrivate: false
+  data:
+    token: eyJraWQiOiI3SGlBcnk1a1NPQkk0QTJJWGplN0Z4S2JjVTk0dU9ydlVxMG43YXJkVjJVIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiJlZHVhcmRvQHRlc3RlLmNvbSIsInJvbGVzIjpbIkJBU0lDIl0sImlzcyI6ImphdmF3ZWIyIiwibm9tZSI6IkVkdWFyZG8gYWx0ZXJhZG8iLCJpZCI6MiwiZXhwIjoxNzkzMTUwMTA0LCJpYXQiOjE3OTMxNDI5MDR9.ekRDxwSWTKBbfnCePrzQc-ZZ8O5GAFIDON4i_6UIjsw

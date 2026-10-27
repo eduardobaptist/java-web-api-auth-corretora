@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+</head>
+<body style="margin:0; padding:24px; background-color:#f4f4f5; font-family:Arial, Helvetica, sans-serif; color:#27272a;">
+<div style="max-width:600px; margin:0 auto; background-color:#ffffff; border-radius:8px; padding:32px;">
+    <h2 style="margin:0 0 16px; font-size:22px; color:#18181b;">
+        Novo interesse em imóvel
+    </h2>
+
+    <p style="margin:0 0 24px; font-size:15px; line-height:1.5;">
+        <strong th:text="${nome}">Usuário</strong> quer saber mais sobre o imóvel
+        <strong th:text="${imovel != null} ? ${imovel.titulo} : ''">Título do imóvel</strong>.
+    </p>
+
+    <!-- Dados do imóvel -->
+    <div th:if="${imovel != null}"
+         style="margin-bottom:24px; padding:20px; border:1px solid #e4e4e7; border-radius:6px;">
+        <p style="margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px; color:#71717a;">
+            Imóvel <span th:text="'#' + ${imovel.id}">#1</span>
+            <span th:if="${imovel.tipoImovel != null}" th:text="'· ' + ${imovel.tipoImovel.nome}">· Casa</span>
+            <span th:if="${imovel.finalidade != null}" th:text="'· ' + ${imovel.finalidade}">· Venda</span>
+        </p>
+
+        <h3 style="margin:0 0 16px; font-size:18px; color:#18181b;" th:text="${imovel.titulo}">Título do imóvel</h3>
+
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+            <tr th:if="${imovel.precoVenda != null}">
+                <td style="padding:6px 0; font-weight:bold; width:140px;">Preço de venda:</td>
+                <td style="padding:6px 0;"
+                    th:text="'R$ ' + ${#numbers.formatDecimal(imovel.precoVenda, 1, 'POINT', 2, 'COMMA')}">R$ 0,00</td>
+            </tr>
+            <tr th:if="${imovel.precoAluguel != null}">
+                <td style="padding:6px 0; font-weight:bold; width:140px;">Preço de aluguel:</td>
+                <td style="padding:6px 0;"
+                    th:text="'R$ ' + ${#numbers.formatDecimal(imovel.precoAluguel, 1, 'POINT', 2, 'COMMA')}">R$ 0,00</td>
+            </tr>
+            <tr th:if="${imovel.dormitorios != null or imovel.banheiros != null or imovel.garagem != null}">
+                <td style="padding:6px 0; font-weight:bold;">Cômodos:</td>
+                <td style="padding:6px 0;">
+                    <span th:if="${imovel.dormitorios != null}" th:text="${imovel.dormitorios} + ' dorm.'">3 dorm.</span>
+                    <span th:if="${imovel.banheiros != null}" th:text="' · ' + ${imovel.banheiros} + ' banh.'">· 2 banh.</span>
+                    <span th:if="${imovel.garagem != null}" th:text="' · ' + ${imovel.garagem} + ' vaga(s)'">· 1 vaga(s)</span>
+                </td>
+            </tr>
+            <tr th:if="${imovel.areaTotal != null or imovel.areaConstruida != null}">
+                <td style="padding:6px 0; font-weight:bold;">Área:</td>
+                <td style="padding:6px 0;">
+                    <span th:if="${imovel.areaConstruida != null}"
+                          th:text="${#numbers.formatDecimal(imovel.areaConstruida, 1, 'POINT', 2, 'COMMA')} + ' m² construída'">120 m² construída</span>
+                    <span th:if="${imovel.areaConstruida != null and imovel.areaTotal != null}"> · </span>
+                    <span th:if="${imovel.areaTotal != null}"
+                          th:text="${#numbers.formatDecimal(imovel.areaTotal, 1, 'POINT', 2, 'COMMA')} + ' m² total'">300 m² total</span>
+                </td>
+            </tr>
+            <tr th:if="${imovel.endereco != null}">
+                <td style="padding:6px 0; font-weight:bold; vertical-align:top;">Endereço:</td>
+                <td style="padding:6px 0;">
+                    <span th:text="${imovel.endereco}">Rua Exemplo</span><span th:if="${imovel.numero != null}" th:text="', ' + ${imovel.numero}">, 123</span><span th:if="${imovel.complemento != null and !#strings.isEmpty(imovel.complemento)}" th:text="' - ' + ${imovel.complemento}"> - Apto 1</span>
+                    <br th:if="${imovel.bairro != null or imovel.cep != null}">
+                    <span th:if="${imovel.bairro != null}" th:text="${imovel.bairro.nome}">Centro</span><span th:if="${imovel.bairro != null and imovel.cep != null}"> · </span><span th:if="${imovel.cep != null}" th:text="'CEP ' + ${imovel.cep}">CEP 00000-000</span>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Dados do contato -->
+    <p style="margin:0 0 8px; font-size:15px; font-weight:bold;">Contato</p>
+    <table style="width:100%; border-collapse:collapse; font-size:15px; margin-bottom:24px;">
+        <tr>
+            <td style="padding:6px 0; font-weight:bold; width:100px;">Nome:</td>
+            <td style="padding:6px 0;" th:text="${nome}">Fulano de Tal</td>
+        </tr>
+        <tr>
+            <td style="padding:6px 0; font-weight:bold;">E-mail:</td>
+            <td style="padding:6px 0;">
+                <a th:href="'mailto:' + ${email}" th:text="${email}"
+                   style="color:#2563eb; text-decoration:none;">email@exemplo.com</a>
+            </td>
+        </tr>
+        <tr th:if="${telefone != null and !#strings.isEmpty(telefone)}">
+            <td style="padding:6px 0; font-weight:bold;">Telefone:</td>
+            <td style="padding:6px 0;">
+                <a th:href="'tel:' + ${telefone}" th:text="${telefone}"
+                   style="color:#2563eb; text-decoration:none;">(00) 00000-0000</a>
+            </td>
+        </tr>
+    </table>
+
+    <p style="margin:0 0 8px; font-size:15px; font-weight:bold;">Mensagem</p>
+    <div style="padding:16px; background-color:#f4f4f5; border-left:4px solid #2563eb; border-radius:4px; font-size:15px; line-height:1.5; white-space:pre-line;"
+         th:text="${mensagem}">Mensagem do usuário</div>
+
+    <a th:href="'mailto:' + ${email} + (${imovel != null} ? '?subject=' + ${#uris.escapeQueryParam('Re: ' + imovel.titulo)} : '')"
+       style="display:inline-block; margin-top:24px; padding:12px 24px; background-color:#2563eb; color:#ffffff; text-decoration:none; border-radius:6px; font-size:15px; font-weight:bold;">
+        Responder
+    </a>
+</div>
+</body>
+</html>
