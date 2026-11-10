@@ -76,24 +76,24 @@
             <td style="padding:6px 0; font-weight:bold;">E-mail:</td>
             <td style="padding:6px 0;">
                 <a th:href="'mailto:' + ${email}" th:text="${email}"
-                   style="color:#2563eb; text-decoration:none;">email@exemplo.com</a>
+                   style="color:#117D38; text-decoration:none;">email@exemplo.com</a>
             </td>
         </tr>
         <tr th:if="${telefone != null and !#strings.isEmpty(telefone)}">
             <td style="padding:6px 0; font-weight:bold;">Telefone:</td>
             <td style="padding:6px 0;">
                 <a th:href="'tel:' + ${telefone}" th:text="${telefone}"
-                   style="color:#2563eb; text-decoration:none;">(00) 00000-0000</a>
+                   style="color:#117D38; text-decoration:none;">(00) 00000-0000</a>
             </td>
         </tr>
     </table>
 
     <p style="margin:0 0 8px; font-size:15px; font-weight:bold;">Mensagem</p>
-    <div style="padding:16px; background-color:#f4f4f5; border-left:4px solid #2563eb; border-radius:4px; font-size:15px; line-height:1.5; white-space:pre-line;"
+    <div style="padding:16px; background-color:#f4f4f5; border-left:4px solid #1ED760; border-radius:4px; font-size:15px; line-height:1.5; white-space:pre-line;"
          th:text="${mensagem}">Mensagem do usuário</div>
 
     <a th:href="'mailto:' + ${email} + (${imovel != null} ? '?subject=' + ${#uris.escapeQueryParam('Re: ' + imovel.titulo)} : '')"
-       style="display:inline-block; margin-top:24px; padding:12px 24px; background-color:#2563eb; color:#ffffff; text-decoration:none; border-radius:6px; font-size:15px; font-weight:bold;">
+       style="display:inline-block; margin-top:24px; padding:12px 24px; background-color:#1ED760; color:#121212; text-decoration:none; border-radius:6px; font-size:15px; font-weight:bold;">
         Responder
     </a>
 </div>
