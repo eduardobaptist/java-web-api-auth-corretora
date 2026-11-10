@@ -1,13 +1,13 @@
 package br.com.eduardobaptista.javaweb2.controller;
 
 import java.net.URI;
-import java.util.List;
 
 import br.com.eduardobaptista.javaweb2.model.BairroModel;
 import br.com.eduardobaptista.javaweb2.service.BairroService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,15 +27,10 @@ public class BairroController {
     @Autowired
     private BairroService service;
 
-    @GetMapping()
-    public ResponseEntity<List<BairroModel>> getAllBairros() {
-        List<BairroModel> list = service.getAll();
-        return ResponseEntity.status(HttpStatus.OK).body(list);
-    }
-
-    @GetMapping("/bairros-page")
-    public Page<BairroModel> getPosts(Pageable pageable) {
-        return service.getAll(pageable);
+    // "/bairros-page" é mantido como alias da listagem por compatibilidade
+    @GetMapping({"", "/bairros-page"})
+    public ResponseEntity<Page<BairroModel>> getAllBairros(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(service.getAll(pageable));
     }
 
     @GetMapping(value = "/{id}")

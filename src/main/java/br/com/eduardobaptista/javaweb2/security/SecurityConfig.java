@@ -18,7 +18,12 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -40,10 +45,12 @@ public class SecurityConfig {
                         // rotas públicas
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/imoveis", "/imoveis/{id}").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
                         .requestMatchers("/error").permitAll()
 
-                        // "saber mais" é apenas envio de e-mail, não é CRUD de imóvel
-                        .requestMatchers(HttpMethod.POST, "/imoveis/sabermais/**").authenticated()
+                        // "saber mais" é o formulário de contato do visitante (só envia e-mail): público.
+                        // Precisa vir antes da regra de ADMIN para POST /imoveis/**.
+                        .requestMatchers(HttpMethod.POST, "/imoveis/sabermais/{id}").permitAll()
 
                         // CRUD de imóveis (e suas fotos) e de usuários: somente admin
                         .requestMatchers(HttpMethod.POST, "/imoveis", "/imoveis/**").hasRole("ADMIN")
@@ -58,6 +65,22 @@ public class SecurityConfig {
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
 
         return http.build();
+    }
+
+    // Nas rotas públicas o header Authorization é ignorado: assim um token expirado/inválido
+    // enviado pelo cliente não transforma uma rota pública em 401.
+    @Bean
+    public BearerTokenResolver bearerTokenResolver() {
+        DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
+        PathPatternRequestMatcher.Builder path = PathPatternRequestMatcher.withDefaults();
+        RequestMatcher rotasPublicas = new OrRequestMatcher(
+                path.matcher(HttpMethod.POST, "/auth/login"),
+                path.matcher(HttpMethod.GET, "/imoveis"),
+                path.matcher(HttpMethod.GET, "/imoveis/{id}"),
+                path.matcher(HttpMethod.GET, "/uploads/**"),
+                path.matcher(HttpMethod.POST, "/imoveis/sabermais/{id}"));
+
+        return request -> rotasPublicas.matches(request) ? null : delegate.resolve(request);
     }
 
     @Bean

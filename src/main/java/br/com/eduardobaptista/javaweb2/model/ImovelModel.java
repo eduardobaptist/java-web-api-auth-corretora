@@ -1,6 +1,8 @@
 package br.com.eduardobaptista.javaweb2.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -8,6 +10,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "imoveis")
@@ -65,6 +68,13 @@ public class ImovelModel {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "bairro_id")
     private BairroModel bairro;
+
+    // URLs públicas das fotos (capa primeiro). Não é coluna: é preenchido pelo ImovelService
+    // nas consultas e ignorado quando enviado no corpo de POST/PUT.
+    @Transient
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private List<String> fotos;
 
     @CreationTimestamp
     private LocalDateTime createdAt;

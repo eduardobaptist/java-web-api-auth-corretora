@@ -1,6 +1,5 @@
 package br.com.eduardobaptista.javaweb2.service;
 
-import java.util.List;
 import java.util.Optional;
 
 import br.com.eduardobaptista.javaweb2.model.BairroModel;
@@ -15,11 +14,6 @@ public class BairroService {
 
     @Autowired
     private BairroRepository repository;
-
-    public List<BairroModel> getAll() {
-        List<BairroModel> list = repository.findAll();
-        return list;
-    }
 
     public Page<BairroModel> getAll(Pageable pageable) {
         Page<BairroModel> list = repository.findAll(pageable);

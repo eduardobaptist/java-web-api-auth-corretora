@@ -1,13 +1,15 @@
 package br.com.eduardobaptista.javaweb2.controller;
 
 import java.net.URI;
-import java.util.List;
 
 import br.com.eduardobaptista.javaweb2.dto.ImovelSaberMaisDTO;
 import br.com.eduardobaptista.javaweb2.model.ImovelModel;
 import br.com.eduardobaptista.javaweb2.service.ImovelService;
 import jakarta.mail.MessagingException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,14 +31,13 @@ public class ImovelController {
     private ImovelService service;
 
     @GetMapping()
-    public ResponseEntity<List<ImovelModel>> getAll() {
-        List<ImovelModel> list = service.getAll();
-        return ResponseEntity.status(HttpStatus.OK).body(list);
+    public ResponseEntity<Page<ImovelModel>> getAll(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(service.getAll(pageable));
     }
 
     @GetMapping(value = "/{id}")
     public ResponseEntity<ImovelModel> find(@PathVariable Integer id) {
-        ImovelModel model = service.find(id);
+        ImovelModel model = service.findComFotos(id);
         if(model!=null){
             return ResponseEntity.status(HttpStatus.OK).body(model);
         }

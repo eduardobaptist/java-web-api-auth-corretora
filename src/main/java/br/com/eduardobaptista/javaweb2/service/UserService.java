@@ -5,10 +5,11 @@ import br.com.eduardobaptista.javaweb2.model.Role;
 import br.com.eduardobaptista.javaweb2.model.UserModel;
 import br.com.eduardobaptista.javaweb2.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -19,8 +20,8 @@ public class UserService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    public List<UserModel> getAll() {
-        return userRepository.findAll();
+    public Page<UserModel> getAll(Pageable pageable) {
+        return userRepository.findAll(pageable);
     }
 
     public UserModel getById(Integer id) {

@@ -5,13 +5,13 @@ import br.com.eduardobaptista.javaweb2.service.TipoImovelService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
-import java.util.List;
 
 @RestController
 @RequestMapping("/tipos-imoveis")
@@ -20,15 +20,10 @@ public class TipoImovelController {
     @Autowired
     private TipoImovelService service;
 
-    @GetMapping()
-    public ResponseEntity<List<TipoImovelModel>> getAllBairros() {
-        List<TipoImovelModel> list = service.getAll();
-        return ResponseEntity.status(HttpStatus.OK).body(list);
-    }
-
-    @GetMapping("/tipos-imoveis-page")
-    public Page<TipoImovelModel> getPosts(Pageable pageable) {
-        return service.getAll(pageable);
+    // "/tipos-imoveis-page" é mantido como alias da listagem por compatibilidade
+    @GetMapping({"", "/tipos-imoveis-page"})
+    public ResponseEntity<Page<TipoImovelModel>> getAll(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(service.getAll(pageable));
     }
 
     @GetMapping(value = "/{id}")
