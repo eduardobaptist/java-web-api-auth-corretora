@@ -1,0 +1,1176 @@
+openapi: 3.0.3
+info:
+  title: API Corretora de Imóveis (javaweb2)
+  version: 0.0.1
+  description: |
+    API REST de uma corretora de imóveis em Spring Boot 4 (Java 21) com MySQL.
+
+    ## Autenticação
+    - `POST /auth/login` com `{ email, senha }` devolve `{ token }` (JWT HS256, validade padrão de 120 min).
+    - Envie o token em todas as rotas protegidas: `Authorization: Bearer <token>`.
+    - Claims do token: `sub` (e-mail), `id`, `nome`, `roles` (ex.: `["ADMIN"]`), `iss` = `javaweb2`, `iat`, `exp`.
+      O frontend pode decodificar o payload (base64url) para ler `nome`/`roles` sem chamar `/auth/me`.
+    - Não existe refresh token: quando expirar (401), é preciso logar de novo.
+
+    ## Regras de acesso
+    | Rota | Acesso |
+    |------|--------|
+    | `POST /auth/login` | público |
+    | `GET /imoveis`, `GET /imoveis/{id}` | público |
+    | `GET /uploads/**` (arquivos das fotos) | público |
+    | `POST /imoveis/sabermais/{id}` | público |
+    | `POST/PUT/DELETE /imoveis/**` | ADMIN |
+    | `/fotos/**` | ADMIN |
+    | `/user/**` | ADMIN |
+    | demais rotas (`/auth/me`, `/bairros/**`, `/tipos-imoveis/**`, `/email`) | qualquer usuário autenticado |
+
+    Sem token ou token inválido → `401` (corpo vazio, header `WWW-Authenticate: Bearer ...`).
+    Token válido sem a role necessária → `403` (corpo vazio).
+
+    Nas rotas públicas (`POST /auth/login`, `GET /imoveis`, `GET /imoveis/{id}`, `POST /imoveis/sabermais/{id}`,
+    `GET /uploads/**`) o header `Authorization`
+    é ignorado. O frontend pode enviar o token em todas as requisições: um token expirado não quebra as
+    rotas públicas. Nas demais rotas, um `401` significa token ausente/expirado → redirecionar para o login.
+
+    ## Paginação
+    Todos os endpoints de listagem (`GET /imoveis`, `GET /bairros`, `GET /tipos-imoveis`, `GET /user/`) são paginados.
+    - Query params: `page` (começa em **0**), `size` (padrão 20, máximo 100; valores maiores são reduzidos para 100)
+      e `sort=campo,asc|desc`. O `sort` pode ser repetido para ordenar por vários campos, e o padrão é `id,asc`.
+      Campos de relacionamento usam ponto: `sort=bairro.nome,asc`.
+    - Resposta:
+      ```json
+      { "content": [ ... ], "page": { "size": 20, "number": 0, "totalElements": 57, "totalPages": 3 } }
+      ```
+    - `sort` com campo inexistente → `500`.
+    - Para preencher selects (bairros e tipos no formulário de imóvel), use `?size=100`.
+
+    ## Convenções importantes para o frontend
+    - Criação (`POST`) de bairro, tipo de imóvel e imóvel responde `201` **sem corpo**; o id do novo
+      registro vem apenas no header `Location` (ex.: `http://localhost:8080/imoveis/12`).
+    - Atualização (`PUT`) de bairro, tipo de imóvel e imóvel responde `204` sem corpo.
+      O `PUT` substitui o registro inteiro: campos omitidos viram `null`.
+    - Relacionamentos (`tipoImovel`, `bairro`, `imovel`) são enviados como objeto com apenas o id: `{ "id": 3 }`.
+    - Valores monetários/área (`BigDecimal`) são serializados como número JSON.
+    - Datas (`createdAt`, `updatedAt`) são `LocalDateTime` sem fuso, no formato ISO (`2026-10-27T14:03:21.123456`).
+    - Erros não tratados seguem o formato padrão do Spring Boot (`ErrorResponse`).
+    - CORS **não** está configurado no backend; um frontend em outra origem precisa de proxy no dev server
+      ou de configuração de CORS no Spring.
+    - `GET /imoveis` e `GET /imoveis/{id}` devolvem `fotos`: array com as URLs absolutas das fotos
+      (a capa vem primeiro; array vazio se não houver fotos). As URLs apontam para `GET /uploads/{imovelId}/{arquivo}`,
+      que é público e pode ser usado direto em `<img src>`.
+servers:
+  - url: http://localhost:8080
+    description: Desenvolvimento local
+
+tags:
+  - name: Auth
+  - name: Imóveis
+  - name: Fotos
+  - name: Bairros
+  - name: Tipos de imóvel
+  - name: Usuários
+  - name: E-mail
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Autentica e devolve um JWT
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: admin@admin.com
+              senha: admin123
+      responses:
+        '200':
+          description: Login realizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Credenciais inválidas
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: E-mail ou senha inválidos.
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Dados do usuário logado
+      operationId: getMe
+      responses:
+        '200':
+          description: Usuário do token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Usuário do token não existe mais
+
+  /imoveis:
+    get:
+      tags: [Imóveis]
+      summary: Lista imóveis paginados (com as URLs das fotos)
+      operationId: listImoveis
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de imóveis. Cada item traz `fotos` com as URLs das fotos daquele imóvel.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageImovel'
+    post:
+      tags: [Imóveis]
+      summary: Cria um imóvel
+      operationId: createImovel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImovelInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /imoveis/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Imóveis]
+      summary: Busca um imóvel por id (com as URLs das fotos)
+      operationId: getImovel
+      security: []
+      responses:
+        '200':
+          description: Imóvel encontrado, com `fotos` preenchido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Imovel'
+        '404':
+          description: Imóvel não encontrado (corpo vazio)
+    put:
+      tags: [Imóveis]
+      summary: Atualiza (substitui) um imóvel
+      operationId: updateImovel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImovelInput'
+      responses:
+        '204':
+          description: Atualizado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Imóvel não encontrado
+    delete:
+      tags: [Imóveis]
+      summary: Exclui um imóvel
+      operationId: deleteImovel
+      responses:
+        '204':
+          description: Excluído
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /imoveis/sabermais/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Imóveis]
+      summary: Envia e-mail de interesse ("saber mais") sobre um imóvel
+      description: |
+        Formulário de contato público: qualquer visitante pode enviar, sem login.
+        Dispara um e-mail HTML para a corretora com os dados do interessado e do imóvel.
+      operationId: saberMaisImovel
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImovelSaberMais'
+      responses:
+        '200':
+          description: E-mail enviado (corpo vazio)
+        '500':
+          description: |
+            Falha ao enviar o e-mail. Também ocorre (com o corpo de erro padrão do Spring) se algum campo
+            do corpo for nulo ou se o imóvel não existir.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Ocorreu um erro ao enviar o e-mail.
+
+  /uploads/{imovelId}/{arquivo}:
+    get:
+      tags: [Fotos]
+      summary: Arquivo de uma foto
+      description: |
+        Arquivo estático gravado em `app.upload.dir`. Não é preciso montar essa URL: use as URLs prontas
+        do campo `fotos` de `GET /imoveis` e `GET /imoveis/{id}`.
+      operationId: getArquivoFoto
+      security: []
+      parameters:
+        - name: imovelId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: arquivo
+          in: path
+          required: true
+          description: '`nomeArquivo` da foto (`<uuid>_<nome original>`), com URL-encoding'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conteúdo da imagem
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Arquivo não encontrado
+
+  /fotos:
+    post:
+      tags: [Fotos]
+      summary: Envia uma foto para um imóvel
+      operationId: uploadFoto
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [arquivo, imovelId]
+              properties:
+                arquivo:
+                  type: string
+                  format: binary
+                imovelId:
+                  type: integer
+      responses:
+        '200':
+          description: Foto salva
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FotoImovel'
+        '400':
+          description: Arquivo vazio
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Erro ao salvar (ex.: imóvel inexistente)
+    put:
+      tags: [Fotos]
+      summary: Substitui o arquivo de uma foto existente
+      operationId: replaceFoto
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [arquivo, fotoId]
+              properties:
+                arquivo:
+                  type: string
+                  format: binary
+                fotoId:
+                  type: integer
+      responses:
+        '200':
+          description: Foto atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FotoImovel'
+        '400':
+          description: Arquivo vazio
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Erro ao salvar (ex.: foto inexistente)
+
+  /fotos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Fotos]
+      summary: Define a foto como capa do imóvel
+      description: Marca `capa = true` nesta foto e `capa = false` nas demais fotos do mesmo imóvel.
+      operationId: setFotoCapa
+      responses:
+        '200':
+          description: Capa definida (corpo vazio)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [Fotos]
+      summary: Exclui a foto (registro e arquivo)
+      operationId: deleteFoto
+      responses:
+        '200':
+          description: Excluída (corpo vazio)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /bairros:
+    get:
+      tags: [Bairros]
+      summary: Lista bairros paginados
+      operationId: listBairros
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de bairros
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageBairro'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Bairros]
+      summary: Cria um bairro
+      operationId: createBairro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BairroInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /bairros/bairros-page:
+    get:
+      tags: [Bairros]
+      summary: Alias de `GET /bairros` (obsoleto)
+      description: Mantido por compatibilidade; idêntico a `GET /bairros`. Use `GET /bairros`.
+      deprecated: true
+      operationId: pageBairros
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de bairros
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageBairro'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /bairros/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Bairros]
+      summary: Busca um bairro por id
+      description: Se o id não existir, responde `200` com corpo vazio (não `404`).
+      operationId: getBairro
+      responses:
+        '200':
+          description: Bairro (ou corpo vazio se não existir)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bairro'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Bairros]
+      summary: Atualiza (substitui) um bairro
+      description: Responde `204` mesmo se o id não existir.
+      operationId: updateBairro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BairroInput'
+      responses:
+        '204':
+          description: Atualizado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [Bairros]
+      summary: Exclui um bairro
+      operationId: deleteBairro
+      responses:
+        '204':
+          description: Excluído
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tipos-imoveis:
+    get:
+      tags: [Tipos de imóvel]
+      summary: Lista tipos de imóvel paginados
+      operationId: listTiposImovel
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de tipos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageTipoImovel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Tipos de imóvel]
+      summary: Cria um tipo de imóvel
+      operationId: createTipoImovel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TipoImovelInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tipos-imoveis/tipos-imoveis-page:
+    get:
+      tags: [Tipos de imóvel]
+      summary: Alias de `GET /tipos-imoveis` (obsoleto)
+      description: Mantido por compatibilidade; idêntico a `GET /tipos-imoveis`. Use `GET /tipos-imoveis`.
+      deprecated: true
+      operationId: pageTiposImovel
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de tipos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageTipoImovel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tipos-imoveis/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Tipos de imóvel]
+      summary: Busca um tipo de imóvel por id
+      description: Se o id não existir, responde `200` com corpo vazio (não `404`).
+      operationId: getTipoImovel
+      responses:
+        '200':
+          description: Tipo (ou corpo vazio se não existir)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TipoImovel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Tipos de imóvel]
+      summary: Atualiza (substitui) um tipo de imóvel
+      description: Responde `204` mesmo se o id não existir.
+      operationId: updateTipoImovel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TipoImovelInput'
+      responses:
+        '204':
+          description: Atualizado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [Tipos de imóvel]
+      summary: Exclui um tipo de imóvel
+      operationId: deleteTipoImovel
+      responses:
+        '204':
+          description: Excluído
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /user/:
+    get:
+      tags: [Usuários]
+      summary: Lista usuários paginados
+      description: Atenção à barra final — a rota é `/user/` (`GET /user` não é mapeado).
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de usuários
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /user:
+    post:
+      tags: [Usuários]
+      summary: Cria um usuário
+      description: Se `role` não for enviado, o usuário é criado como `BASIC`.
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateInput'
+      responses:
+        '201':
+          description: Usuário criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/EmailConflict'
+
+  /user/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Usuários]
+      summary: Busca um usuário por id
+      operationId: getUser
+      responses:
+        '200':
+          description: Usuário
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Usuário não encontrado
+    put:
+      tags: [Usuários]
+      summary: Atualiza um usuário
+      description: |
+        `nome` e `email` são sempre sobrescritos. `senha` só é alterada se enviada e não vazia;
+        `role` só é alterado se enviado.
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateInput'
+      responses:
+        '200':
+          description: Usuário atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Usuário não encontrado
+        '409':
+          $ref: '#/components/responses/EmailConflict'
+    delete:
+      tags: [Usuários]
+      summary: Exclui um usuário
+      operationId: deleteUser
+      responses:
+        '204':
+          description: Excluído
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /email:
+    get:
+      tags: [E-mail]
+      summary: Envia um e-mail de teste (endpoint de desenvolvimento)
+      operationId: sendTestEmail
+      responses:
+        '200':
+          description: Enviado
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Enviado
+        '400':
+          description: Falha no envio (mensagem do erro)
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    Page:
+      name: page
+      in: query
+      description: Número da página (começa em 0)
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    Size:
+      name: size
+      in: query
+      description: Itens por página (valores acima de 100 são limitados a 100)
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+    Sort:
+      name: sort
+      in: query
+      description: |
+        Ordenação no formato `campo,asc|desc` (padrão `id,asc`). Pode repetir o parâmetro.
+        Campo inexistente → `500`.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          example: nome,asc
+
+  responses:
+    Created:
+      description: Criado. Sem corpo; o id do novo recurso está no header `Location`.
+      headers:
+        Location:
+          description: URL do recurso criado
+          schema:
+            type: string
+            format: uri
+            example: http://localhost:8080/imoveis/12
+    Unauthorized:
+      description: Token ausente, inválido ou expirado (corpo vazio)
+    Forbidden:
+      description: Usuário autenticado sem a role ADMIN (corpo vazio)
+    EmailConflict:
+      description: E-mail já cadastrado
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: E-mail já cadastrado.
+    ServerError:
+      description: Erro interno (ex.: id inexistente)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    Role:
+      type: string
+      enum: [ADMIN, BASIC]
+
+    LoginRequest:
+      type: object
+      required: [email, senha]
+      properties:
+        email:
+          type: string
+          format: email
+        senha:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: JWT a ser enviado em `Authorization: Bearer <token>`
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: Administrador
+        email:
+          type: string
+          format: email
+          example: admin@admin.com
+        role:
+          $ref: '#/components/schemas/Role'
+
+    UserCreateInput:
+      type: object
+      required: [nome, email, senha]
+      properties:
+        nome:
+          type: string
+        email:
+          type: string
+          format: email
+        senha:
+          type: string
+          format: password
+        role:
+          $ref: '#/components/schemas/Role'
+
+    UserUpdateInput:
+      type: object
+      required: [nome, email]
+      properties:
+        nome:
+          type: string
+        email:
+          type: string
+          format: email
+        senha:
+          type: string
+          format: password
+          description: Opcional. Vazio ou ausente mantém a senha atual.
+        role:
+          $ref: '#/components/schemas/Role'
+
+    Bairro:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: Centro
+        cidade:
+          type: string
+          example: Curitiba
+        estado:
+          type: string
+          example: PR
+        cepInicial:
+          type: string
+          example: 80010-000
+        cepFinal:
+          type: string
+          example: 80060-999
+
+    BairroInput:
+      type: object
+      properties:
+        nome:
+          type: string
+        cidade:
+          type: string
+        estado:
+          type: string
+        cepInicial:
+          type: string
+        cepFinal:
+          type: string
+
+    TipoImovel:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: Apartamento
+        descricao:
+          type: string
+        createdAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/LocalDateTime'
+
+    TipoImovelInput:
+      type: object
+      properties:
+        nome:
+          type: string
+        descricao:
+          type: string
+
+    Imovel:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 12
+        titulo:
+          type: string
+          example: Apartamento 2 quartos no Centro
+        descricao:
+          type: string
+        precoVenda:
+          type: number
+          nullable: true
+          example: 450000.00
+        precoAluguel:
+          type: number
+          nullable: true
+          example: 2200.00
+        finalidade:
+          type: string
+          description: Texto livre (ex. venda, aluguel, venda/aluguel)
+        status:
+          type: string
+          description: Texto livre (ex. disponivel, vendido, alugado)
+        dormitorios:
+          type: integer
+        banheiros:
+          type: integer
+        garagem:
+          type: integer
+        areaTotal:
+          type: number
+        areaConstruida:
+          type: number
+        endereco:
+          type: string
+        numero:
+          type: string
+        complemento:
+          type: string
+        cep:
+          type: string
+          maxLength: 9
+          example: 80010-000
+        caracteristicas:
+          type: string
+          description: Texto livre
+        destaque:
+          type: boolean
+          default: false
+        tipoImovel:
+          allOf:
+            - $ref: '#/components/schemas/TipoImovel'
+          nullable: true
+        bairro:
+          allOf:
+            - $ref: '#/components/schemas/Bairro'
+          nullable: true
+        fotos:
+          type: array
+          readOnly: true
+          description: |
+            URLs absolutas das fotos do imóvel: a capa primeiro, depois pela `ordem` e por fim pela ordem de envio.
+            Array vazio quando o imóvel não tem fotos. Vem só em `GET /imoveis` (em cada item de `content`) e `GET /imoveis/{id}`
+            (não aparece no `imovel` aninhado da resposta de `/fotos`). Se for enviado em POST/PUT, é ignorado.
+          items:
+            type: string
+            format: uri
+          example:
+            - http://localhost:8080/uploads/12/3f2a9c1e-7b1d-4c55-9a0e-2d4b8f6e1a77_fachada.jpg
+            - http://localhost:8080/uploads/12/8c0d5e2b-1f3a-4b6c-8d9e-0a1b2c3d4e5f_sala%20de%20estar.jpg
+        createdAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/LocalDateTime'
+
+    ImovelInput:
+      type: object
+      description: Campos omitidos são gravados como `null` (no PUT também).
+      properties:
+        titulo:
+          type: string
+        descricao:
+          type: string
+        precoVenda:
+          type: number
+        precoAluguel:
+          type: number
+        finalidade:
+          type: string
+        status:
+          type: string
+        dormitorios:
+          type: integer
+        banheiros:
+          type: integer
+        garagem:
+          type: integer
+        areaTotal:
+          type: number
+        areaConstruida:
+          type: number
+        endereco:
+          type: string
+        numero:
+          type: string
+        complemento:
+          type: string
+        cep:
+          type: string
+          maxLength: 9
+        caracteristicas:
+          type: string
+        destaque:
+          type: boolean
+          default: false
+        tipoImovel:
+          $ref: '#/components/schemas/IdRef'
+        bairro:
+          $ref: '#/components/schemas/IdRef'
+      example:
+        titulo: Apartamento 2 quartos no Centro
+        descricao: Próximo ao metrô, reformado.
+        precoVenda: 450000
+        precoAluguel: null
+        finalidade: venda
+        status: disponivel
+        dormitorios: 2
+        banheiros: 1
+        garagem: 1
+        areaTotal: 68.5
+        areaConstruida: 60
+        endereco: Rua XV de Novembro
+        numero: '1000'
+        complemento: Apto 52
+        cep: 80010-000
+        caracteristicas: Sacada, churrasqueira
+        destaque: true
+        tipoImovel: { id: 1 }
+        bairro: { id: 1 }
+
+    ImovelSaberMais:
+      type: object
+      required: [nome, email, telefone, mensagem]
+      description: Todos os campos são obrigatórios (valor nulo causa erro 500).
+      properties:
+        nome:
+          type: string
+        email:
+          type: string
+          format: email
+        telefone:
+          type: string
+        mensagem:
+          type: string
+
+    FotoImovel:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomeArquivo:
+          type: string
+          description: '`<uuid>_<nome original>`'
+        caminho:
+          type: string
+          description: |
+            Caminho no disco do servidor (ex. `./uploads/12/<uuid>_foto.jpg`); não é uma URL.
+            A URL pública é `/uploads/{imovel.id}/{nomeArquivo}`.
+        capa:
+          type: boolean
+          nullable: true
+          description: '`null` até alguma foto do imóvel ser definida como capa.'
+        ordem:
+          type: integer
+          nullable: true
+          description: Ainda não é preenchido pela API.
+        imovel:
+          $ref: '#/components/schemas/Imovel'
+        createdAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/LocalDateTime'
+
+    IdRef:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+
+    LocalDateTime:
+      type: string
+      description: Data/hora sem fuso horário (ISO-8601)
+      example: '2026-10-27T14:03:21.123456'
+
+    PageMetadata:
+      type: object
+      description: |
+        Metadados da página. Primeira página: `number == 0`.
+        Última página: `number >= totalPages - 1` (com `totalPages == 0` quando não há resultados).
+      required: [size, number, totalElements, totalPages]
+      properties:
+        size:
+          type: integer
+          description: Tamanho da página solicitado (após o limite de 100)
+          example: 20
+        number:
+          type: integer
+          description: Página atual (começa em 0)
+          example: 0
+        totalElements:
+          type: integer
+          description: Total de registros em todas as páginas
+          example: 57
+        totalPages:
+          type: integer
+          example: 3
+
+    PageImovel:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Imovel'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+
+    PageBairro:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bairro'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+
+    PageTipoImovel:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/TipoImovel'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+
+    PageUser:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+
+    ErrorResponse:
+      type: object
+      description: Corpo de erro padrão do Spring Boot
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: integer
+          example: 500
+        error:
+          type: string
+          example: Internal Server Error
+        path:
+          type: string
+          example: /fotos/99
