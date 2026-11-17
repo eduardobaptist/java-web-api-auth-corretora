@@ -11,11 +11,13 @@ info:
     - Claims do token: `sub` (e-mail), `id`, `nome`, `roles` (ex.: `["ADMIN"]`), `iss` = `javaweb2`, `iat`, `exp`.
       O frontend pode decodificar o payload (base64url) para ler `nome`/`roles` sem chamar `/auth/me`.
     - Não existe refresh token: quando expirar (401), é preciso logar de novo.
+    - Autocadastro de clientes: `POST /auth/cadastro` com `{ nome, email, senha }` cria um usuário **BASIC**
+      e já devolve `{ token }` (mesmo formato do login), então o cliente sai logado.
 
     ## Regras de acesso
     | Rota | Acesso |
     |------|--------|
-    | `POST /auth/login` | público |
+    | `POST /auth/login`, `POST /auth/cadastro` | público |
     | `GET /imoveis`, `GET /imoveis/{id}` | público |
     | `GET /uploads/**` (arquivos das fotos) | público |
     | `POST /imoveis/sabermais/{id}` | público |
@@ -27,7 +29,7 @@ info:
     Sem token ou token inválido → `401` (corpo vazio, header `WWW-Authenticate: Bearer ...`).
     Token válido sem a role necessária → `403` (corpo vazio).
 
-    Nas rotas públicas (`POST /auth/login`, `GET /imoveis`, `GET /imoveis/{id}`, `POST /imoveis/sabermais/{id}`,
+    Nas rotas públicas (`POST /auth/login`, `POST /auth/cadastro`, `GET /imoveis`, `GET /imoveis/{id}`, `POST /imoveis/sabermais/{id}`,
     `GET /uploads/**`) o header `Authorization`
     é ignorado. O frontend pode enviar o token em todas as requisições: um token expirado não quebra as
     rotas públicas. Nas demais rotas, um `401` significa token ausente/expirado → redirecionar para o login.
@@ -53,6 +55,23 @@ info:
     - Valores monetários/área (`BigDecimal`) são serializados como número JSON.
     - Datas (`createdAt`, `updatedAt`) são `LocalDateTime` sem fuso, no formato ISO (`2026-10-27T14:03:21.123456`).
     - Erros não tratados seguem o formato padrão do Spring Boot (`ErrorResponse`).
+
+    ## Validação e formato dos erros (`400`)
+    Todo erro de validação responde `400` com um objeto plano `{ "campo": "mensagem" }`, com **uma mensagem por
+    campo** (a primeira regra que falhou). Campos aninhados usam ponto (`tipoImovel.id`). A ordem das chaves não é
+    garantida. Exemplo:
+    ```json
+    { "titulo": "O título é obrigatório.", "cep": "CEP inválido. Use o formato 00000-000." }
+    ```
+    Casos especiais, todos no mesmo formato:
+    - Valor com tipo errado no JSON (ex.: `"abc"` em `precoVenda`, `role` fora do enum): `{ "precoVenda": "Formato inválido." }`.
+    - JSON malformado ou corpo ausente: `{ "corpo": "JSON inválido ou ausente." }`.
+    - Path variable com tipo errado (ex.: `/imoveis/abc`): `{ "id": "Formato inválido." }`.
+    - Parâmetro de formulário/multipart ausente (ex.: `imovelId` em `/fotos`): `{ "imovelId": "Campo obrigatório." }`.
+
+    As regras de cada campo (obrigatório, `maxLength`, `pattern`, `minimum` etc.) estão nos schemas `*Input`/`*Request`
+    e seguem as colunas do banco. Strings vazias ou só com espaços contam como ausentes nos campos obrigatórios.
+    A validação roda antes do controle de existência: um `PUT` inválido para um id inexistente responde `400`, não `404`.
     - CORS **não** está configurado no backend; um frontend em outra origem precisa de proxy no dev server
       ou de configuração de CORS no Spring.
     - `GET /imoveis` e `GET /imoveis/{id}` devolvem `fotos`: array com as URLs absolutas das fotos
@@ -97,6 +116,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           description: Credenciais inválidas
           content:
@@ -104,6 +125,43 @@ paths:
               schema:
                 type: string
                 example: E-mail ou senha inválidos.
+
+  /auth/cadastro:
+    post:
+      tags: [Auth]
+      summary: Autocadastro de cliente (role BASIC) e devolve um JWT
+      description: |
+        Rota pública. O usuário é sempre criado com role `BASIC`: um campo `role` enviado no corpo é ignorado.
+        Os espaços nas pontas de `nome` e `email` são removidos. A resposta já traz o token, então não é
+        preciso chamar `/auth/login` em seguida.
+      operationId: cadastro
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CadastroRequest'
+            example:
+              nome: Maria Silva
+              email: maria@exemplo.com
+              senha: segredo123
+      responses:
+        '201':
+          description: Cliente cadastrado e autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: E-mail já cadastrado
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: E-mail já cadastrado.
 
   /auth/me:
     get:
@@ -152,6 +210,8 @@ paths:
       responses:
         '201':
           $ref: '#/components/responses/Created'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -187,6 +247,8 @@ paths:
       responses:
         '204':
           description: Atualizado
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -225,10 +287,12 @@ paths:
       responses:
         '200':
           description: E-mail enviado (corpo vazio)
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Imóvel não encontrado (corpo vazio; nenhum e-mail é enviado)
         '500':
-          description: |
-            Falha ao enviar o e-mail. Também ocorre (com o corpo de erro padrão do Spring) se algum campo
-            do corpo for nulo ou se o imóvel não existir.
+          description: Falha ao enviar o e-mail
           content:
             text/plain:
               schema:
@@ -283,6 +347,9 @@ paths:
                 arquivo:
                   type: string
                   format: binary
+                  description: |
+                    Imagem JPEG, PNG ou WebP (pelo `Content-Type` da parte), não vazia,
+                    com nome original de no máximo 150 caracteres.
                 imovelId:
                   type: integer
       responses:
@@ -293,13 +360,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/FotoImovel'
         '400':
-          description: Arquivo vazio
+          description: |
+            Erro de validação no formato `{ campo: mensagem }`. Mensagens possíveis em `arquivo`:
+            `O arquivo é obrigatório e não pode estar vazio.`, `Formato inválido. Envie uma imagem JPEG, PNG ou WebP.`,
+            `O arquivo precisa ter um nome.`, `O nome do arquivo deve ter no máximo 150 caracteres.`.
+            Parâmetro ausente: `{ "imovelId": "Campo obrigatório." }` (ou `fotoId`, `arquivo`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              example:
+                arquivo: Formato inválido. Envie uma imagem JPEG, PNG ou WebP.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          description: Erro ao salvar (ex.: imóvel inexistente)
+          description: 'Erro ao salvar (ex.: imóvel inexistente)'
     put:
       tags: [Fotos]
       summary: Substitui o arquivo de uma foto existente
@@ -315,6 +392,9 @@ paths:
                 arquivo:
                   type: string
                   format: binary
+                  description: |
+                    Imagem JPEG, PNG ou WebP (pelo `Content-Type` da parte), não vazia,
+                    com nome original de no máximo 150 caracteres.
                 fotoId:
                   type: integer
       responses:
@@ -325,13 +405,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/FotoImovel'
         '400':
-          description: Arquivo vazio
+          description: |
+            Erro de validação no formato `{ campo: mensagem }`. Mensagens possíveis em `arquivo`:
+            `O arquivo é obrigatório e não pode estar vazio.`, `Formato inválido. Envie uma imagem JPEG, PNG ou WebP.`,
+            `O arquivo precisa ter um nome.`, `O nome do arquivo deve ter no máximo 150 caracteres.`.
+            Parâmetro ausente: `{ "imovelId": "Campo obrigatório." }` (ou `fotoId`, `arquivo`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              example:
+                arquivo: Formato inválido. Envie uma imagem JPEG, PNG ou WebP.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          description: Erro ao salvar (ex.: foto inexistente)
+          description: 'Erro ao salvar (ex.: foto inexistente)'
 
   /fotos/{id}:
     parameters:
@@ -395,6 +485,8 @@ paths:
       responses:
         '201':
           $ref: '#/components/responses/Created'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -450,6 +542,8 @@ paths:
       responses:
         '204':
           description: Atualizado
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
     delete:
@@ -493,6 +587,8 @@ paths:
       responses:
         '201':
           $ref: '#/components/responses/Created'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -548,6 +644,8 @@ paths:
       responses:
         '204':
           description: Atualizado
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
     delete:
@@ -601,6 +699,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -648,6 +748,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -745,6 +847,17 @@ components:
             type: string
             format: uri
             example: http://localhost:8080/imoveis/12
+    ValidationError:
+      description: |
+        Erro de validação: objeto `{ campo: mensagem }` com a primeira mensagem de cada campo inválido.
+        As regras e mensagens de cada campo estão no schema do corpo da requisição.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrors'
+          example:
+            titulo: O título é obrigatório.
+            cep: CEP inválido. Use o formato 00000-000.
     Unauthorized:
       description: Token ausente, inválido ou expirado (corpo vazio)
     Forbidden:
@@ -757,7 +870,7 @@ components:
             type: string
             example: E-mail já cadastrado.
     ServerError:
-      description: Erro interno (ex.: id inexistente)
+      description: 'Erro interno (ex.: id inexistente)'
       content:
         application/json:
           schema:
@@ -768,16 +881,45 @@ components:
       type: string
       enum: [ADMIN, BASIC]
 
+    ValidationErrors:
+      type: object
+      description: Mapa campo → mensagem (uma por campo). Campos aninhados usam ponto, ex. `tipoImovel.id`.
+      additionalProperties:
+        type: string
+
     LoginRequest:
       type: object
       required: [email, senha]
+      description: |
+        Só valida presença (`O e-mail é obrigatório.`, `A senha é obrigatória.`); credenciais erradas → `401`.
       properties:
         email:
           type: string
-          format: email
         senha:
           type: string
           format: password
+
+    CadastroRequest:
+      type: object
+      required: [nome, email, senha]
+      properties:
+        nome:
+          type: string
+          maxLength: 255
+          description: |
+            Espaços nas pontas são removidos. Mensagens: `O nome é obrigatório.`, `O nome deve ter no máximo 255 caracteres.`
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: |
+            Mensagens: `O e-mail é obrigatório.`, `E-mail inválido.`, `O e-mail deve ter no máximo 255 caracteres.`
+        senha:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 72
+          description: 'Mensagens: `A senha é obrigatória.`, `A senha deve ter entre 6 e 72 caracteres.`'
 
     LoginResponse:
       type: object
@@ -785,7 +927,7 @@ components:
       properties:
         token:
           type: string
-          description: JWT a ser enviado em `Authorization: Bearer <token>`
+          description: 'JWT a ser enviado em `Authorization: Bearer <token>`'
 
     User:
       type: object
@@ -809,14 +951,23 @@ components:
       properties:
         nome:
           type: string
+          maxLength: 255
+          description: 'Mensagens: `O nome é obrigatório.`, `O nome deve ter no máximo 255 caracteres.`'
         email:
           type: string
           format: email
+          maxLength: 255
+          description: 'Mensagens: `O e-mail é obrigatório.`, `E-mail inválido.`, `O e-mail deve ter no máximo 255 caracteres.`'
         senha:
           type: string
           format: password
+          minLength: 6
+          maxLength: 72
+          description: 'Mensagens: `A senha é obrigatória.`, `A senha deve ter entre 6 e 72 caracteres.`'
         role:
-          $ref: '#/components/schemas/Role'
+          allOf:
+            - $ref: '#/components/schemas/Role'
+          description: 'Opcional (padrão `BASIC`). Valor fora do enum → `{ "role": "Formato inválido." }`.'
 
     UserUpdateInput:
       type: object
@@ -824,15 +975,24 @@ components:
       properties:
         nome:
           type: string
+          maxLength: 255
+          description: 'Mensagens: `O nome é obrigatório.`, `O nome deve ter no máximo 255 caracteres.`'
         email:
           type: string
           format: email
+          maxLength: 255
+          description: 'Mensagens: `O e-mail é obrigatório.`, `E-mail inválido.`, `O e-mail deve ter no máximo 255 caracteres.`'
         senha:
           type: string
           format: password
-          description: Opcional. Vazio ou ausente mantém a senha atual.
+          maxLength: 72
+          description: |
+            Opcional. Vazio, só espaços ou ausente mantém a senha atual; se enviada, precisa ter de 6 a 72 caracteres
+            (`A senha deve ter entre 6 e 72 caracteres.`).
         role:
-          $ref: '#/components/schemas/Role'
+          allOf:
+            - $ref: '#/components/schemas/Role'
+          description: Opcional; ausente mantém a role atual. Valor fora do enum → `Formato inválido.`
 
     Bairro:
       type: object
@@ -858,17 +1018,34 @@ components:
 
     BairroInput:
       type: object
+      required: [nome, cidade, estado]
       properties:
         nome:
           type: string
+          maxLength: 255
+          description: 'Mensagens: `O nome é obrigatório.`, `O nome deve ter no máximo 255 caracteres.`'
         cidade:
           type: string
+          maxLength: 255
+          description: 'Mensagens: `A cidade é obrigatória.`, `A cidade deve ter no máximo 255 caracteres.`'
         estado:
           type: string
+          enum: [AC, AL, AP, AM, BA, CE, DF, ES, GO, MA, MT, MS, MG, PA, PB, PR, PE, PI, RJ, RN, RS, RO, RR, SC, SP, SE, TO]
+          description: |
+            Sigla da UF em maiúsculas. Mensagens: `O estado é obrigatório.`,
+            `Estado inválido. Use a sigla da UF em maiúsculas (ex.: RS).`
         cepInicial:
           type: string
+          nullable: true
+          pattern: '^\d{5}-\d{3}$'
+          example: 98280-000
+          description: 'Opcional. Mensagem: `CEP inicial inválido. Use o formato 00000-000.`'
         cepFinal:
           type: string
+          nullable: true
+          pattern: '^\d{5}-\d{3}$'
+          example: 98289-999
+          description: 'Opcional. Mensagem: `CEP final inválido. Use o formato 00000-000.`'
 
     TipoImovel:
       type: object
@@ -888,11 +1065,17 @@ components:
 
     TipoImovelInput:
       type: object
+      required: [nome]
       properties:
         nome:
           type: string
+          maxLength: 255
+          description: 'Mensagens: `O nome é obrigatório.`, `O nome deve ter no máximo 255 caracteres.`'
         descricao:
           type: string
+          nullable: true
+          maxLength: 255
+          description: 'Mensagem: `A descrição deve ter no máximo 255 caracteres.`'
 
     Imovel:
       type: object
@@ -973,48 +1156,113 @@ components:
 
     ImovelInput:
       type: object
-      description: Campos omitidos são gravados como `null` (no PUT também).
+      required: [titulo]
+      description: |
+        Campos omitidos são gravados como `null` (no PUT também), exceto `destaque`, que vira `false`.
       properties:
         titulo:
           type: string
+          maxLength: 255
+          description: 'Mensagens: `O título é obrigatório.`, `O título deve ter no máximo 255 caracteres.`'
         descricao:
           type: string
+          nullable: true
+          maxLength: 16000
+          description: 'Mensagem: `A descrição deve ter no máximo 16000 caracteres.`'
         precoVenda:
           type: number
+          nullable: true
+          minimum: 0
+          description: |
+            Até 13 dígitos inteiros e 2 casas decimais. Mensagens: `O preço de venda não pode ser negativo.`,
+            `O preço de venda deve ter até 13 dígitos inteiros e 2 casas decimais.`
         precoAluguel:
           type: number
+          nullable: true
+          minimum: 0
+          description: |
+            Até 13 dígitos inteiros e 2 casas decimais. Mensagens: `O preço de aluguel não pode ser negativo.`,
+            `O preço de aluguel deve ter até 13 dígitos inteiros e 2 casas decimais.`
         finalidade:
           type: string
+          nullable: true
+          maxLength: 255
+          description: 'Mensagem: `A finalidade deve ter no máximo 255 caracteres.`'
         status:
           type: string
+          nullable: true
+          maxLength: 255
+          description: 'Mensagem: `O status deve ter no máximo 255 caracteres.`'
         dormitorios:
           type: integer
+          nullable: true
+          minimum: 0
+          description: 'Mensagem: `O número de dormitórios não pode ser negativo.`'
         banheiros:
           type: integer
+          nullable: true
+          minimum: 0
+          description: 'Mensagem: `O número de banheiros não pode ser negativo.`'
         garagem:
           type: integer
+          nullable: true
+          minimum: 0
+          description: 'Mensagem: `O número de vagas de garagem não pode ser negativo.`'
         areaTotal:
           type: number
+          nullable: true
+          minimum: 0
+          description: |
+            Até 8 dígitos inteiros e 2 casas decimais. Mensagens: `A área total não pode ser negativa.`,
+            `A área total deve ter até 8 dígitos inteiros e 2 casas decimais.`
         areaConstruida:
           type: number
+          nullable: true
+          minimum: 0
+          description: |
+            Até 8 dígitos inteiros e 2 casas decimais. Mensagens: `A área construída não pode ser negativa.`,
+            `A área construída deve ter até 8 dígitos inteiros e 2 casas decimais.`
         endereco:
           type: string
+          nullable: true
+          maxLength: 255
+          description: 'Mensagem: `O endereço deve ter no máximo 255 caracteres.`'
         numero:
           type: string
+          nullable: true
+          maxLength: 255
+          description: 'Mensagem: `O número deve ter no máximo 255 caracteres.`'
         complemento:
           type: string
+          nullable: true
+          maxLength: 255
+          description: 'Mensagem: `O complemento deve ter no máximo 255 caracteres.`'
         cep:
           type: string
-          maxLength: 9
+          nullable: true
+          pattern: '^\d{5}-\d{3}$'
+          example: 98280-000
+          description: 'Opcional, com hífen. Mensagem: `CEP inválido. Use o formato 00000-000.`'
         caracteristicas:
           type: string
+          nullable: true
+          maxLength: 16000
+          description: 'Mensagem: `As características devem ter no máximo 16000 caracteres.`'
         destaque:
           type: boolean
           default: false
+          description: Omitido ou `null` grava `false`.
         tipoImovel:
-          $ref: '#/components/schemas/IdRef'
+          allOf:
+            - $ref: '#/components/schemas/IdRef'
+          nullable: true
+          description: |
+            Opcional. Se enviado, o id precisa existir: `{ "tipoImovel.id": "Tipo de imóvel não encontrado." }`.
         bairro:
-          $ref: '#/components/schemas/IdRef'
+          allOf:
+            - $ref: '#/components/schemas/IdRef'
+          nullable: true
+          description: 'Opcional. Se enviado, o id precisa existir: `{ "bairro.id": "Bairro não encontrado." }`.'
       example:
         titulo: Apartamento 2 quartos no Centro
         descricao: Próximo ao metrô, reformado.
@@ -1038,18 +1286,29 @@ components:
 
     ImovelSaberMais:
       type: object
-      required: [nome, email, telefone, mensagem]
-      description: Todos os campos são obrigatórios (valor nulo causa erro 500).
+      required: [nome, email, mensagem]
       properties:
         nome:
           type: string
+          maxLength: 255
+          description: 'Mensagens: `O nome é obrigatório.`, `O nome deve ter no máximo 255 caracteres.`'
         email:
           type: string
           format: email
+          maxLength: 255
+          description: 'Mensagens: `O e-mail é obrigatório.`, `E-mail inválido.`, `O e-mail deve ter no máximo 255 caracteres.`'
         telefone:
           type: string
+          nullable: true
+          pattern: '^[0-9()+\- ]{8,20}$'
+          example: (55) 99999-1234
+          description: |
+            Opcional. De 8 a 20 caracteres entre dígitos, espaços, parênteses, `+` e `-`. Mensagem:
+            `Telefone inválido. Use de 8 a 20 caracteres entre dígitos, espaços, parênteses, + e -.`
         mensagem:
           type: string
+          maxLength: 2000
+          description: 'Mensagens: `A mensagem é obrigatória.`, `A mensagem deve ter no máximo 2000 caracteres.`'
 
     FotoImovel:
       type: object

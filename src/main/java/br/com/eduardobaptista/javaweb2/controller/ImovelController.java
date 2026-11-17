@@ -6,6 +6,7 @@ import br.com.eduardobaptista.javaweb2.dto.ImovelSaberMaisDTO;
 import br.com.eduardobaptista.javaweb2.model.ImovelModel;
 import br.com.eduardobaptista.javaweb2.service.ImovelService;
 import jakarta.mail.MessagingException;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -47,7 +48,7 @@ public class ImovelController {
     }
 
     @PostMapping
-    public ResponseEntity<Void> insert(@RequestBody ImovelModel model) {
+    public ResponseEntity<Void> insert(@Valid @RequestBody ImovelModel model) {
         model = service.insert(model);
         URI uri =
                 ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(model.getId()).toUri();
@@ -55,9 +56,10 @@ public class ImovelController {
     }
 
     @PostMapping("/sabermais/{id}")
-    public ResponseEntity<String> saberMaisEmail(@PathVariable Integer id, @RequestBody ImovelSaberMaisDTO dto) {
+    public ResponseEntity<String> saberMaisEmail(@PathVariable Integer id, @Valid @RequestBody ImovelSaberMaisDTO dto) {
         try {
-            service.enviarEmailSaberMais(id, dto);
+            if (!service.enviarEmailSaberMais(id, dto))
+                return ResponseEntity.notFound().build();
             return ResponseEntity.ok().build();
         } catch (MessagingException e) {
             e.printStackTrace();
@@ -66,15 +68,11 @@ public class ImovelController {
     }
 
     @PutMapping(value = "/{id}")
-    public ResponseEntity<Void> update(@RequestBody ImovelModel model, @PathVariable Integer id) {
-        try {
-            model.setId(id);
-            model = service.update(model);
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
+    public ResponseEntity<Void> update(@Valid @RequestBody ImovelModel model, @PathVariable Integer id) {
+        model.setId(id);
+        if (service.update(model) == null)
             return ResponseEntity.notFound().build();
-        }
-
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping(value = "/{id}")

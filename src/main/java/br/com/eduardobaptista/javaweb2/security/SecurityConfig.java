@@ -43,7 +43,7 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // rotas públicas
-                        .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/cadastro").permitAll()
                         .requestMatchers(HttpMethod.GET, "/imoveis", "/imoveis/{id}").permitAll()
                         .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
                         .requestMatchers("/error").permitAll()
@@ -75,6 +75,7 @@ public class SecurityConfig {
         PathPatternRequestMatcher.Builder path = PathPatternRequestMatcher.withDefaults();
         RequestMatcher rotasPublicas = new OrRequestMatcher(
                 path.matcher(HttpMethod.POST, "/auth/login"),
+                path.matcher(HttpMethod.POST, "/auth/cadastro"),
                 path.matcher(HttpMethod.GET, "/imoveis"),
                 path.matcher(HttpMethod.GET, "/imoveis/{id}"),
                 path.matcher(HttpMethod.GET, "/uploads/**"),

@@ -33,9 +33,10 @@ Na inicialização, `config/AdminSeeder` cria o usuário admin definido em `app.
 | `service` | Regras de negócio; um service por entidade + `EmailService` |
 | `repository` | Interfaces `JpaRepository<Model, Integer>` |
 | `model` | Entidades JPA (`*Model`) e o enum `Role` (`ADMIN`, `BASIC`) |
-| `dto` | `LoginRequestDTO`, `LoginResponseDTO`, `UserDTO` (sem senha), `UserRequestDTO`, `ImovelSaberMaisDTO` |
+| `dto` | `LoginRequestDTO`, `LoginResponseDTO`, `CadastroRequestDTO` (autocadastro, sem `role`), `UserDTO` (sem senha), `UserRequestDTO`, `ImovelSaberMaisDTO` |
 | `security` | `SecurityConfig` (regras de acesso, encoder/decoder JWT), `TokenService` (gera o token), `UserDetailsServiceImpl` |
-| `config` | `AdminSeeder` |
+| `config` | `AdminSeeder`, `WebConfig` |
+| `exception` | `ApiExceptionHandler` (`@RestControllerAdvice` que padroniza os `400`), `ValidacaoException` |
 
 Recursos: `src/main/resources/templates/email/template.html` (template Thymeleaf do e-mail "saber mais").
 
@@ -60,6 +61,14 @@ Recursos: `src/main/resources/templates/email/template.html` (template Thymeleaf
   Não crie endpoints que devolvam `List` sem paginação. As rotas `/bairros/bairros-page` e
   `/tipos-imoveis/tipos-imoveis-page` são apenas aliases obsoletos da listagem.
 - Services retornam `null` quando não encontram o registro; o controller decide o status.
+- **Validação**: Bean Validation nas entidades (`ImovelModel`, `BairroModel`, `TipoImovelModel`) e nos DTOs de entrada,
+  com `@Valid` no `@RequestBody`. Os limites seguem as colunas reais do banco (VARCHAR(255), DECIMAL(15,2)/(10,2),
+  `cep` VARCHAR(9), TEXT ≈ 16000 caracteres) e as mensagens ficam em português no atributo `message`. Todo erro de
+  validação responde `400 { campo: mensagem }` pelo `exception/ApiExceptionHandler`. Isso vale também para JSON
+  malformado, tipo errado, path variable inválida e parâmetro multipart ausente. Uma regra que depende do banco
+  (ex.: o id de `tipoImovel`/`bairro` precisa existir) lança `ValidacaoException` no service. Ao criar um campo ou
+  endpoint, anote as regras e documente-as (com as mensagens) no schema `*Input` do `docs/openapi.yaml`.
+- CEP sempre no formato `00000-000`; UF como sigla maiúscula; `destaque` omitido/`null` vira `false` (`ImovelService.normalizar`).
 - Injeção por `@Autowired` em campo na maioria das classes (`ImovelService` e `EmailService` usam construtor).
 - Relacionamentos LAZY serializados em JSON precisam de `@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})`.
 - Fotos são salvas em `${app.upload.dir}/{imovelId}/{uuid}_{nomeOriginal}` (padrão `./uploads`). O
@@ -71,7 +80,7 @@ Recursos: `src/main/resources/templates/email/template.html` (template Thymeleaf
 - Token gerado em `TokenService`: `sub` = e-mail, claims `id`, `nome`, `roles` (lista), issuer `javaweb2`,
   validade `app.jwt.expiration-minutes`. As roles do token viram `ROLE_*` em `SecurityConfig.jwtAuthenticationConverter`.
 - Regras (em `SecurityConfig`, a ordem importa):
-  - públicas: `POST /auth/login`, `GET /imoveis`, `GET /imoveis/{id}`, `POST /imoveis/sabermais/{id}`
+  - públicas: `POST /auth/login`, `POST /auth/cadastro` (autocadastro de cliente), `GET /imoveis`, `GET /imoveis/{id}`, `POST /imoveis/sabermais/{id}`
     (formulário de contato), `GET /uploads/**`, `/error`
   - ADMIN: escrita em `/imoveis/**` (a regra do sabermais precisa vir antes), tudo em `/fotos/**` e `/user/**`
   - qualquer outra rota: autenticado
@@ -105,6 +114,11 @@ Há também uma coleção do Insomnia em `Insomnia_2026-10-27.yaml`.
   O `ddl-auto=update` não altera colunas existentes. Por exemplo, `fotos_imoveis.id` sem `AUTO_INCREMENT`
   (`Field 'id' doesn't have a default value`) precisou de `ALTER TABLE` manual.
 - `FotoImovelController` e `FotoImovelService` engolem exceções (`printStackTrace`) e respondem `500`.
-- `ImovelSaberMaisDTO.toMap()` usa `Map.of`, então qualquer campo nulo gera `NullPointerException`.
-- Sem Bean Validation, sem `@ControllerAdvice` para tratar erros globalmente e sem testes reais.
+- `POST /auth/cadastro` cria sempre um usuário `BASIC` (o DTO não tem `role` e o `UserService.cadastrar` força a role)
+  e devolve o token. Como o `sabermais`, não tem limite de taxa nem captcha.
+- Os 6 bairros cadastrados hoje têm `cep_final = '9828000'` (7 dígitos) e `cep_inicial` nulo. Um `PUT` neles que
+  reenvie esse valor recebe `400` até o CEP ser corrigido.
+- `/fotos` só valida o `Content-Type` declarado pelo cliente, não o conteúdo do arquivo. Um `imovelId`/`fotoId`
+  inexistente ainda responde `500`.
+- O `ApiExceptionHandler` só trata erros de validação; os demais erros seguem o formato padrão do Spring. Não há testes reais.
 - `sort` com um campo inexistente nas listagens responde `500` (não há tratamento para `PropertyReferenceException`).

@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,7 +41,7 @@ public class BairroController {
     }
 
     @PostMapping
-    public ResponseEntity<Void> insert(@RequestBody BairroModel model) {
+    public ResponseEntity<Void> insert(@Valid @RequestBody BairroModel model) {
         model = service.insert(model);
         // return new ResponseEntity(model, HttpStatus.CREATED);
         URI uri =
@@ -49,7 +50,7 @@ public class BairroController {
     }
 
     @PutMapping(value = "/{id}")
-    public ResponseEntity<Void> update(@RequestBody BairroModel model, @PathVariable Integer id) {
+    public ResponseEntity<Void> update(@Valid @RequestBody BairroModel model, @PathVariable Integer id) {
         model.setId(id);
         model = service.update(model);
         return ResponseEntity.noContent().build();

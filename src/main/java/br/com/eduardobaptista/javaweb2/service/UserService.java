@@ -1,5 +1,6 @@
 package br.com.eduardobaptista.javaweb2.service;
 
+import br.com.eduardobaptista.javaweb2.dto.CadastroRequestDTO;
 import br.com.eduardobaptista.javaweb2.dto.UserRequestDTO;
 import br.com.eduardobaptista.javaweb2.model.Role;
 import br.com.eduardobaptista.javaweb2.model.UserModel;
@@ -38,6 +39,22 @@ public class UserService {
         user.setEmail(dto.email());
         user.setSenha(passwordEncoder.encode(dto.senha()));
         user.setRole(dto.role() != null ? dto.role() : Role.BASIC);
+
+        return userRepository.save(user);
+    }
+
+    // autocadastro público: a role é sempre BASIC, independente do que o cliente enviar
+    public UserModel cadastrar(CadastroRequestDTO dto) {
+        String email = dto.email().trim();
+
+        if (userRepository.existsByEmail(email))
+            throw new IllegalArgumentException("E-mail já cadastrado.");
+
+        UserModel user = new UserModel();
+        user.setNome(dto.nome().trim());
+        user.setEmail(email);
+        user.setSenha(passwordEncoder.encode(dto.senha()));
+        user.setRole(Role.BASIC);
 
         return userRepository.save(user);
     }

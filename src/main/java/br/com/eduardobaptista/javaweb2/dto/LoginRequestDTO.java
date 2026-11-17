@@ -1,4 +1,12 @@
 package br.com.eduardobaptista.javaweb2.dto;
 
-public record LoginRequestDTO(String email, String senha) {
+import jakarta.validation.constraints.NotBlank;
+
+public record LoginRequestDTO(
+        @NotBlank(message = "O e-mail é obrigatório.")
+        String email,
+
+        @NotBlank(message = "A senha é obrigatória.")
+        String senha
+) {
 }

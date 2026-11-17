@@ -4,6 +4,9 @@ import java.io.Serializable;
 
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,14 +21,23 @@ public class BairroModel implements Serializable{
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
+    @NotBlank(message = "O nome é obrigatório.")
+    @Size(max = 255, message = "O nome deve ter no máximo 255 caracteres.")
     private String nome;
 
+    @NotBlank(message = "A cidade é obrigatória.")
+    @Size(max = 255, message = "A cidade deve ter no máximo 255 caracteres.")
     private String cidade;
 
+    @NotBlank(message = "O estado é obrigatório.")
+    @Pattern(regexp = "AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO",
+            message = "Estado inválido. Use a sigla da UF em maiúsculas (ex.: RS).")
     private String estado;
 
+    @Pattern(regexp = "\\d{5}-\\d{3}", message = "CEP inicial inválido. Use o formato 00000-000.")
     private String cepInicial;
 
+    @Pattern(regexp = "\\d{5}-\\d{3}", message = "CEP final inválido. Use o formato 00000-000.")
     private String cepFinal;
 
     public BairroModel(){};

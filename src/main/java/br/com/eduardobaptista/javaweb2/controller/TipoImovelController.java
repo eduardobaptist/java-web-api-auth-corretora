@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -33,7 +34,7 @@ public class TipoImovelController {
     }
 
     @PostMapping
-    public ResponseEntity<Void> insert(@RequestBody TipoImovelModel model) {
+    public ResponseEntity<Void> insert(@Valid @RequestBody TipoImovelModel model) {
         model = service.insert(model);
         // return new ResponseEntity(model, HttpStatus.CREATED);
         URI uri =
@@ -42,7 +43,7 @@ public class TipoImovelController {
     }
 
     @PutMapping(value = "/{id}")
-    public ResponseEntity<Void> update(@RequestBody TipoImovelModel model, @PathVariable Integer id) {
+    public ResponseEntity<Void> update(@Valid @RequestBody TipoImovelModel model, @PathVariable Integer id) {
         model.setId(id);
         model = service.update(model);
         return ResponseEntity.noContent().build();

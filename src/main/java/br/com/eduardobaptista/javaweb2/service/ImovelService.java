@@ -8,10 +8,13 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import br.com.eduardobaptista.javaweb2.dto.ImovelSaberMaisDTO;
+import br.com.eduardobaptista.javaweb2.exception.ValidacaoException;
 import br.com.eduardobaptista.javaweb2.model.FotoImovelModel;
 import br.com.eduardobaptista.javaweb2.model.ImovelModel;
+import br.com.eduardobaptista.javaweb2.repository.BairroRepository;
 import br.com.eduardobaptista.javaweb2.repository.FotoImovelRepository;
 import br.com.eduardobaptista.javaweb2.repository.ImovelRepository;
+import br.com.eduardobaptista.javaweb2.repository.TipoImovelRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -30,12 +33,17 @@ public class ImovelService {
 
     private final ImovelRepository repository;
     private final FotoImovelRepository fotoImovelRepository;
+    private final TipoImovelRepository tipoImovelRepository;
+    private final BairroRepository bairroRepository;
     private final EmailService emailService;
 
     public ImovelService(ImovelRepository repository, FotoImovelRepository fotoImovelRepository,
+                         TipoImovelRepository tipoImovelRepository, BairroRepository bairroRepository,
                          EmailService emailService) {
         this.repository = repository;
         this.fotoImovelRepository = fotoImovelRepository;
+        this.tipoImovelRepository = tipoImovelRepository;
+        this.bairroRepository = bairroRepository;
         this.emailService = emailService;
     }
 
@@ -82,27 +90,56 @@ public class ImovelService {
     }
 
     public ImovelModel insert(ImovelModel model) {
+        normalizar(model);
+        validarRelacionamentos(model);
         return repository.save(model);
     }
 
     public ImovelModel update(ImovelModel model) {
-        try {
-            if (find(model.getId()) != null) {
-                return repository.save(model);
-            }
+        if (find(model.getId()) == null)
             return null;
-        } catch (Exception e) {
-            return null;
+
+        normalizar(model);
+        validarRelacionamentos(model);
+        return repository.save(model);
+    }
+
+    // o Jackson não aplica o @Builder.Default: destaque omitido chega null e a coluna é NOT NULL
+    private void normalizar(ImovelModel model) {
+        if (model.getDestaque() == null)
+            model.setDestaque(false);
+    }
+
+    // tipoImovel e bairro são opcionais, mas se vierem precisam apontar para um registro existente
+    // (sem isso, o banco recusa a FK e a API responderia 500)
+    private void validarRelacionamentos(ImovelModel model) {
+        Map<String, String> erros = new HashMap<>();
+
+        if (model.getTipoImovel() != null) {
+            Integer tipoId = model.getTipoImovel().getId();
+            if (tipoId == null || !tipoImovelRepository.existsById(tipoId))
+                erros.put("tipoImovel.id", "Tipo de imóvel não encontrado.");
         }
 
+        if (model.getBairro() != null) {
+            Integer bairroId = model.getBairro().getId();
+            if (bairroId == null || !bairroRepository.existsById(bairroId))
+                erros.put("bairro.id", "Bairro não encontrado.");
+        }
+
+        if (!erros.isEmpty())
+            throw new ValidacaoException(erros);
     }
 
     public void delete(Integer id) {
         repository.deleteById(id);
     }
 
-    public void enviarEmailSaberMais(Integer id, ImovelSaberMaisDTO dto) throws MessagingException {
+    // devolve false se o imóvel não existe (o controller responde 404)
+    public boolean enviarEmailSaberMais(Integer id, ImovelSaberMaisDTO dto) throws MessagingException {
         ImovelModel model = this.find(id);
+        if (model == null)
+            return false;
 
         Map<String, Object> variaveis = new HashMap<>(dto.toMap());
         variaveis.put("imovel", model);
@@ -113,6 +150,7 @@ public class ImovelService {
                 "email/template",
                 variaveis
         );
+        return true;
     }
 }
 

@@ -10,6 +10,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.Valid;
+import jakarta.validation.groups.Default;
 import org.springframework.web.bind.annotation.*;
 
 
@@ -26,7 +29,7 @@ public class UserController {
     }
 
     @PostMapping()
-    public ResponseEntity<?> create(@RequestBody UserRequestDTO user) {
+    public ResponseEntity<?> create(@Validated({Default.class, UserRequestDTO.Criacao.class}) @RequestBody UserRequestDTO user) {
         try {
             UserModel savedUser = service.create(user);
             return ResponseEntity.status(HttpStatus.CREATED).body(new UserDTO(savedUser));
@@ -46,7 +49,7 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> update(@PathVariable int id, @RequestBody UserRequestDTO user) {
+    public ResponseEntity<?> update(@PathVariable int id, @Valid @RequestBody UserRequestDTO user) {
         try {
             UserModel updatedUser = service.update(id, user);
 
