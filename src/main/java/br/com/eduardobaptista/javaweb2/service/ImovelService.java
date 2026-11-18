@@ -11,6 +11,7 @@ import br.com.eduardobaptista.javaweb2.dto.ImovelSaberMaisDTO;
 import br.com.eduardobaptista.javaweb2.exception.ValidacaoException;
 import br.com.eduardobaptista.javaweb2.model.FotoImovelModel;
 import br.com.eduardobaptista.javaweb2.model.ImovelModel;
+import br.com.eduardobaptista.javaweb2.model.StatusImovel;
 import br.com.eduardobaptista.javaweb2.repository.BairroRepository;
 import br.com.eduardobaptista.javaweb2.repository.FotoImovelRepository;
 import br.com.eduardobaptista.javaweb2.repository.ImovelRepository;
@@ -49,6 +50,13 @@ public class ImovelService {
 
     public Page<ImovelModel> getAll(Pageable pageable) {
         Page<ImovelModel> page = repository.findAll(pageable);
+        preencherFotos(page.getContent());
+        return page;
+    }
+
+    // imóveis favoritados pelo usuário, já com as URLs das fotos
+    public Page<ImovelModel> getFavoritos(Integer usuarioId, Pageable pageable) {
+        Page<ImovelModel> page = repository.findFavoritosDoUsuario(usuarioId, pageable);
         preencherFotos(page.getContent());
         return page;
     }
@@ -108,6 +116,8 @@ public class ImovelService {
     private void normalizar(ImovelModel model) {
         if (model.getDestaque() == null)
             model.setDestaque(false);
+        if (model.getStatus() == null)
+            model.setStatus(StatusImovel.DISPONIVEL);
     }
 
     // tipoImovel e bairro são opcionais, mas se vierem precisam apontar para um registro existente

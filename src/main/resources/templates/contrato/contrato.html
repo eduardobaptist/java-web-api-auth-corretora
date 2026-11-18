@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<!--
+  Template do contrato gerado pela API (ContratoPdfService -> OpenHTMLtoPDF).
+  Precisa ser XHTML bem formado: feche todas as tags (<br/>) e use &#160; em vez de &nbsp;.
+  O CSS suportado é o de impressão do OpenHTMLtoPDF (CSS 2.1 + @page); não há flexbox/grid.
+-->
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR">
+<head>
+    <meta charset="UTF-8"/>
+    <title th:text="${titulo}">Contrato</title>
+    <style th:inline="css">
+        @page {
+            size: A4;
+            margin: 2.2cm 2cm 2.4cm 2cm;
+            @bottom-center {
+                content: "Oferta nº [(${ofertaId})] - página " counter(page) " de " counter(pages);
+                font-family: Helvetica, sans-serif;
+                font-size: 8pt;
+                color: #666666;
+            }
+        }
+        body { font-family: Helvetica, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #222222; }
+        h1 { font-size: 15pt; text-align: center; text-transform: uppercase; margin: 0 0 4pt 0; }
+        .subtitulo { text-align: center; font-size: 9pt; color: #555555; margin-bottom: 18pt; }
+        h2 { font-size: 10.5pt; text-transform: uppercase; margin: 16pt 0 4pt 0; border-bottom: 1px solid #1ED760; padding-bottom: 2pt; }
+        p { margin: 0 0 6pt 0; text-align: justify; }
+        table.dados { width: 100%; border-collapse: collapse; margin: 4pt 0 6pt 0; }
+        table.dados td { padding: 3pt 6pt; border: 1px solid #dddddd; vertical-align: top; }
+        table.dados td.rotulo { width: 28%; background: #f4f4f4; font-weight: bold; }
+        .adicionais { white-space: pre-wrap; }
+        .fecho { page-break-inside: avoid; }
+        .assinaturas { margin-top: 12pt; width: 100%; }
+        .assinaturas td { width: 50%; padding: 0 12pt; text-align: center; vertical-align: top; }
+        .linha { border-top: 1px solid #222222; padding-top: 4pt; margin-top: 32pt; }
+        .nota { margin-top: 14pt; font-size: 8pt; color: #666666; }
+    </style>
+</head>
+<body>
+
+<h1 th:text="${titulo}">Contrato</h1>
+<div class="subtitulo">Referente à oferta nº <span th:text="${ofertaId}">1</span><span th:if="${dataOferta}">, de <span th:text="${dataOferta}">01/01/2026</span></span> - emitido em <span th:text="${dataEmissao}">01/01/2026</span></div>
+
+<h2>1. Das partes</h2>
+<p>
+    <strong>CONTRATADA:</strong> <span th:text="${empresa}">Corretora</span>, na qualidade de intermediadora e
+    representante do(a) proprietário(a) do imóvel descrito abaixo.
+</p>
+<p>
+    <strong th:text="${papelCliente} + ':'">CLIENTE:</strong>
+    <span th:text="${clienteNome}">Nome</span>, e-mail <span th:text="${clienteEmail}">email</span>.
+</p>
+
+<h2>2. Do objeto</h2>
+<p th:text="${aluguel} ? 'O presente contrato tem por objeto a locação do imóvel abaixo:' : 'O presente contrato tem por objeto a compra e venda do imóvel abaixo:'">Objeto</p>
+<table class="dados">
+    <tr><td class="rotulo">Imóvel</td><td th:text="${imovelTitulo}">Título</td></tr>
+    <tr th:if="${imovelTipo}"><td class="rotulo">Tipo</td><td th:text="${imovelTipo}">Casa</td></tr>
+    <tr><td class="rotulo">Endereço</td><td th:text="${imovelEndereco}">Endereço</td></tr>
+    <tr th:if="${imovelAreaTotal}"><td class="rotulo">Área total</td><td th:text="${#numbers.formatDecimal(imovelAreaTotal, 1, 'POINT', 2, 'COMMA')} + ' m²'">0 m²</td></tr>
+    <tr th:if="${imovelAreaConstruida}"><td class="rotulo">Área construída</td><td th:text="${#numbers.formatDecimal(imovelAreaConstruida, 1, 'POINT', 2, 'COMMA')} + ' m²'">0 m²</td></tr>
+</table>
+
+<th:block th:if="${aluguel}">
+    <h2>3. Do aluguel e do prazo</h2>
+    <p>
+        O valor mensal do aluguel é de <strong th:text="${valor}">R$ 0,00</strong>, com vencimento todo dia
+        <strong th:text="${diaVencimento}">10</strong> de cada mês, a ser pago <span th:text="${formaPagamento}">forma</span>.
+    </p>
+    <p>
+        A locação vigorará pelo prazo de <strong th:text="${prazoMeses}">30</strong> meses, contados da data de
+        assinatura deste contrato, podendo ser renovada mediante acordo entre as partes.
+    </p>
+    <p>
+        O(A) LOCATÁRIO(A) se obriga a conservar o imóvel, utilizá-lo para a finalidade a que se destina e
+        restituí-lo, ao fim da locação, no estado em que o recebeu, salvo o desgaste natural do uso.
+    </p>
+</th:block>
+
+<th:block th:unless="${aluguel}">
+    <h2>3. Do preço e do pagamento</h2>
+    <p>
+        O preço total ajustado para a compra e venda é de <strong th:text="${valor}">R$ 0,00</strong>,
+        a ser pago <span th:text="${formaPagamento}">forma</span>.
+    </p>
+    <p>
+        A posse do imóvel será transferida ao(à) COMPRADOR(A) após a quitação do preço, e a escritura pública
+        será lavrada em cartório, correndo as despesas de escritura e registro por conta do(a) COMPRADOR(A),
+        salvo acordo em contrário.
+    </p>
+</th:block>
+
+<h2>4. Das disposições gerais</h2>
+<p>
+    As partes declaram ter lido e concordado com todas as cláusulas deste contrato, que obriga as partes e
+    seus sucessores. Eventuais alterações só terão validade se feitas por escrito.
+</p>
+<p>
+    O descumprimento de qualquer cláusula sujeitará a parte infratora às penalidades previstas em lei.
+</p>
+
+<th:block th:if="${clausulasAdicionais}">
+    <h2>5. Das cláusulas adicionais</h2>
+    <p class="adicionais" th:text="${clausulasAdicionais}">Cláusulas</p>
+</th:block>
+
+<!-- data, assinaturas e nota ficam juntas (não quebram entre páginas) -->
+<div class="fecho">
+<p style="margin-top: 18pt;">
+    <span th:if="${cidade}" th:text="${cidade} + ', '">Cidade, </span><span th:text="${dataExtenso}">1 de janeiro de 2026</span>.
+</p>
+
+<table class="assinaturas">
+    <tr>
+        <td><div class="linha" th:text="${empresa}">Corretora</div><div>CONTRATADA</div></td>
+        <td><div class="linha" th:text="${clienteNome}">Cliente</div><div th:text="${papelCliente}">CLIENTE</div></td>
+    </tr>
+</table>
+
+<p class="nota">
+    Documento gerado automaticamente pela plataforma. A assinatura do(a) cliente é registrada eletronicamente,
+    com data e hora, quando ele(a) aceita o contrato na plataforma.
+</p>
+</div>
+
+</body>
+</html>

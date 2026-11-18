@@ -59,6 +59,13 @@ public class SecurityConfig {
                         .requestMatchers("/fotos", "/fotos/**").hasRole("ADMIN")
                         .requestMatchers("/user", "/user/**").hasRole("ADMIN")
 
+                        // ofertas e contratos: as rotas do cliente (criar/listar as suas, cancelar oferta,
+                        // assinar contrato, baixar PDF) caem no "autenticado"; o dono é checado no service
+                        .requestMatchers(HttpMethod.GET, "/ofertas").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/ofertas/{id}/status").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/contratos").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/contratos", "/contratos/previa", "/contratos/{id}/cancelar").hasRole("ADMIN")
+
                         // demais rotas: apenas autenticado
                         .anyRequest().authenticated()
                 )

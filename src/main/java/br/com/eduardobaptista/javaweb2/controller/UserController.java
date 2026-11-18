@@ -2,7 +2,9 @@ package br.com.eduardobaptista.javaweb2.controller;
 
 import br.com.eduardobaptista.javaweb2.dto.UserDTO;
 import br.com.eduardobaptista.javaweb2.dto.UserRequestDTO;
+import br.com.eduardobaptista.javaweb2.model.ImovelModel;
 import br.com.eduardobaptista.javaweb2.model.UserModel;
+import br.com.eduardobaptista.javaweb2.service.FavoritoService;
 import br.com.eduardobaptista.javaweb2.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -22,6 +24,9 @@ public class UserController {
 
     @Autowired
     private UserService service;
+
+    @Autowired
+    private FavoritoService favoritoService;
 
     @GetMapping("/")
     public ResponseEntity<Page<UserDTO>> getAll(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
@@ -46,6 +51,16 @@ public class UserController {
         } else {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
+    }
+
+    // imóveis favoritos de um usuário (admin)
+    @GetMapping("/{id}/favoritos")
+    public ResponseEntity<Page<ImovelModel>> favoritos(@PathVariable int id,
+                                                       @PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        Page<ImovelModel> page = favoritoService.listar(id, pageable);
+        if (page == null)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        return ResponseEntity.ok(page);
     }
 
     @PutMapping("/{id}")

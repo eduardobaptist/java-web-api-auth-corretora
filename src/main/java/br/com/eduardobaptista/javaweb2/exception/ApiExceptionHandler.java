@@ -1,6 +1,8 @@
 package br.com.eduardobaptista.javaweb2.exception;
 
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -8,9 +10,12 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.exc.MismatchedInputException;
+
+import org.springframework.util.unit.DataSize;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,6 +50,22 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ValidacaoException.class)
     public ResponseEntity<Map<String, String>> regraInvalida(ValidacaoException e) {
         return ResponseEntity.badRequest().body(e.getErros());
+    }
+
+    // o estado atual do registro não permite a operação (ex.: aceitar oferta cancelada)
+    @ExceptionHandler(ConflitoException.class)
+    public ResponseEntity<Map<String, String>> conflito(ConflitoException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getErros());
+    }
+
+    @Value("${spring.servlet.multipart.max-file-size:1MB}")
+    private DataSize tamanhoMaximoArquivo;
+
+    // arquivo acima de spring.servlet.multipart.max-file-size (10MB no application.properties)
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, String>> arquivoGrande(MaxUploadSizeExceededException e) {
+        return ResponseEntity.badRequest().body(Map.of("arquivo",
+                "O arquivo excede o tamanho máximo de " + tamanhoMaximoArquivo.toMegabytes() + "MB."));
     }
 
     // JSON malformado ou valor com tipo errado (ex.: "abc" em precoVenda, role inexistente)

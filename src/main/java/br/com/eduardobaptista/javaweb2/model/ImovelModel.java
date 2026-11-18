@@ -7,7 +7,9 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -49,8 +51,12 @@ public class ImovelModel {
     @Size(max = 255, message = "A finalidade deve ter no máximo 255 caracteres.")
     private String finalidade;
 
-    @Size(max = 255, message = "O status deve ter no máximo 255 caracteres.")
-    private String status;
+    // omitido/null vira DISPONIVEL (ImovelService.normalizar). Gravado como VARCHAR(255), igual à coluna
+    // antiga de texto livre, para o ddl-auto não tentar trocar o tipo da coluna.
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(length = 255)
+    private StatusImovel status;
 
     @PositiveOrZero(message = "O número de dormitórios não pode ser negativo.")
     private Integer dormitorios;

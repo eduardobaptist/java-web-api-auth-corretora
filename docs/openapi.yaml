@@ -23,11 +23,17 @@ info:
     | `POST /imoveis/sabermais/{id}` | público |
     | `POST/PUT/DELETE /imoveis/**` | ADMIN |
     | `/fotos/**` | ADMIN |
-    | `/user/**` | ADMIN |
+    | `/user/**` (inclui `GET /user/{id}/favoritos`) | ADMIN |
+    | `GET /ofertas`, `PATCH /ofertas/{id}/status` | ADMIN |
+    | `GET /contratos`, `POST /contratos`, `POST /contratos/previa`, `POST /contratos/{id}/cancelar` | ADMIN |
+    | `POST /ofertas`, `GET /ofertas/minhas`, `GET /ofertas/{id}`, `POST /ofertas/{id}/cancelar` | autenticado (dono da oferta; o admin vê todas) |
+    | `GET /contratos/meus`, `GET /contratos/{id}`, `GET /contratos/{id}/pdf`, `POST /contratos/{id}/assinar` | autenticado (cliente da oferta; o admin vê todos, mas só o cliente assina) |
+    | `/favoritos/**` | autenticado (sempre os favoritos do próprio usuário) |
     | demais rotas (`/auth/me`, `/bairros/**`, `/tipos-imoveis/**`, `/email`) | qualquer usuário autenticado |
 
     Sem token ou token inválido → `401` (corpo vazio, header `WWW-Authenticate: Bearer ...`).
     Token válido sem a role necessária → `403` (corpo vazio).
+    Oferta/contrato de outro usuário (para quem não é admin) → `404`, como se não existisse.
 
     Nas rotas públicas (`POST /auth/login`, `POST /auth/cadastro`, `GET /imoveis`, `GET /imoveis/{id}`, `POST /imoveis/sabermais/{id}`,
     `GET /uploads/**`) o header `Authorization`
@@ -35,7 +41,8 @@ info:
     rotas públicas. Nas demais rotas, um `401` significa token ausente/expirado → redirecionar para o login.
 
     ## Paginação
-    Todos os endpoints de listagem (`GET /imoveis`, `GET /bairros`, `GET /tipos-imoveis`, `GET /user/`) são paginados.
+    Todos os endpoints de listagem (`GET /imoveis`, `GET /bairros`, `GET /tipos-imoveis`, `GET /user/`, `GET /ofertas`,
+    `GET /ofertas/minhas`, `GET /contratos`, `GET /contratos/meus`, `GET /favoritos`, `GET /user/{id}/favoritos`) são paginados.
     - Query params: `page` (começa em **0**), `size` (padrão 20, máximo 100; valores maiores são reduzidos para 100)
       e `sort=campo,asc|desc`. O `sort` pode ser repetido para ordenar por vários campos, e o padrão é `id,asc`.
       Campos de relacionamento usam ponto: `sort=bairro.nome,asc`.
@@ -68,6 +75,47 @@ info:
     - JSON malformado ou corpo ausente: `{ "corpo": "JSON inválido ou ausente." }`.
     - Path variable com tipo errado (ex.: `/imoveis/abc`): `{ "id": "Formato inválido." }`.
     - Parâmetro de formulário/multipart ausente (ex.: `imovelId` em `/fotos`): `{ "imovelId": "Campo obrigatório." }`.
+    - Query param com valor fora do enum (ex.: `?status=XYZ`): `{ "status": "Formato inválido." }`.
+    - Arquivo acima de 10MB (`spring.servlet.multipart.max-file-size`; vale para fotos e contratos): `{ "arquivo": "O arquivo excede o tamanho máximo de 10MB." }`.
+
+    ## Conflitos de estado (`409`)
+    Quando a requisição é válida mas o status atual do registro não permite a operação (ex.: aceitar uma oferta
+    cancelada, assinar um contrato já assinado), a resposta é `409` no mesmo formato `{ "campo": "mensagem" }`.
+
+    ## Fluxo de oferta → contrato → assinatura
+    O imóvel tem `status` (`StatusImovel`): `DISPONIVEL`, `RESERVADO`, `ALUGADO`, `VENDIDO`. **Só imóveis `DISPONIVEL`
+    recebem ofertas** (no frontend, mostre o botão "Fazer oferta" só quando `imovel.status == "DISPONIVEL"`).
+    Vários clientes podem ofertar no mesmo imóvel ao mesmo tempo. `PENDENTE` e `EM_ESPERA` são equivalentes
+    ("em aberto"): cada cliente pode ter só uma oferta em aberto por imóvel.
+
+    | # | Ação | Quem | Efeito na oferta | Efeito automático no imóvel e nas outras ofertas dele |
+    |---|------|------|------------------|--------------------------------------------------------|
+    | 1 | `POST /ofertas` | cliente | nasce `PENDENTE` | exige imóvel `DISPONIVEL` (senão `409`) |
+    | 2 | `PATCH /ofertas/{id}/status` `ACEITA` | admin | `ACEITA` | exige imóvel `DISPONIVEL` (senão `409`); imóvel → `RESERVADO`; as outras `PENDENTE` → `EM_ESPERA` |
+    | 2b | `PATCH /ofertas/{id}/status` `EM_ESPERA`/`RECUSADA` | admin | o status enviado | nenhum |
+    | 2c | `POST /ofertas/{id}/cancelar` | cliente (dono) | `CANCELADA` | nenhum |
+    | 3 | `POST /contratos` (gerar ou upload) | admin | continua `ACEITA` | nenhum (contrato `AGUARDANDO_ASSINATURA`) |
+    | 4 | `POST /contratos/{id}/assinar` | cliente (dono) | continua `ACEITA` | imóvel → `ALUGADO` (oferta de aluguel) ou `VENDIDO` (venda); as outras em aberto → `RECUSADA` |
+    | 5 | `POST /contratos/{id}/cancelar` (desistência) | admin | `CANCELADA` | imóvel `RESERVADO` → `DISPONIVEL`; as outras `EM_ESPERA` → `PENDENTE` |
+
+    - `2b`/`2c` só valem para oferta em aberto; `ACEITA`, `RECUSADA` e `CANCELADA` são finais (`409`).
+    - Só um contrato ativo (`AGUARDANDO_ASSINATURA`/`ASSINADO`) por oferta, e só oferta `ACEITA` recebe contrato. Como o
+      cancelamento do contrato cancela a oferta, para recomeçar o cliente faz uma oferta nova (ou o admin aceita uma
+      das que voltaram a `PENDENTE`).
+    - Contrato assinado não pode ser cancelado (`409`).
+    - O passo 5 só devolve o imóvel a `DISPONIVEL` se ele ainda estiver `RESERVADO`; se o admin trocou o status
+      manualmente, ele é mantido.
+    - O admin pode mudar `status` do imóvel livremente no `PUT /imoveis/{id}`, sem efeito nas ofertas.
+    - Operações simultâneas no mesmo imóvel (ex.: aceitar duas ofertas ao mesmo tempo) são serializadas: a primeira
+      vence e a segunda recebe `409`.
+    - Depois de qualquer ação, recarregue as listas: as outras ofertas do imóvel podem ter mudado de status.
+
+    Formas de criar o contrato (passo 3): **gerar** (`application/json` com `ContratoGerarInput`, a API monta o PDF
+    com os dados da oferta) ou **upload** (`multipart/form-data` com um PDF pronto). Antes de gerar, dá para conferir
+    com `POST /contratos/previa`. O cliente vê os contratos em `GET /contratos/meus` e baixa o PDF em `urlPdf` (com token).
+
+    O PDF **não** fica em `/uploads` (que é público): é baixado só por `GET /contratos/{id}/pdf`, com token. Para
+    exibir num `<iframe>`/nova aba, baixe com `fetch` + `Authorization` e use `URL.createObjectURL(blob)`.
 
     As regras de cada campo (obrigatório, `maxLength`, `pattern`, `minimum` etc.) estão nos schemas `*Input`/`*Request`
     e seguem as colunas do banco. Strings vazias ou só com espaços contam como ausentes nos campos obrigatórios.
@@ -88,6 +136,9 @@ tags:
   - name: Bairros
   - name: Tipos de imóvel
   - name: Usuários
+  - name: Ofertas
+  - name: Contratos
+  - name: Favoritos
   - name: E-mail
 
 security:
@@ -770,6 +821,625 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /user/{id}/favoritos:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Usuários, Favoritos]
+      summary: Lista os imóveis favoritos de um usuário (admin)
+      operationId: listFavoritosDoUsuario
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de imóveis (com `fotos`). O `sort` usa os campos do imóvel.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageImovel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Usuário não encontrado (corpo vazio)
+
+  /ofertas:
+    post:
+      tags: [Ofertas]
+      summary: Cliente faz uma oferta por um imóvel
+      description: |
+        A oferta nasce `PENDENTE`, ligada ao usuário do token. Regras:
+        - o imóvel precisa estar `DISPONIVEL` (reservado, alugado ou vendido → `409`);
+        - o cliente não pode ter outra oferta em aberto (`PENDENTE`/`EM_ESPERA`) para o mesmo imóvel; depois de
+          cancelada, recusada ou aceita, pode ofertar de novo (se o imóvel estiver disponível);
+        - vários clientes podem ofertar no mesmo imóvel.
+      operationId: createOferta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfertaInput'
+      responses:
+        '201':
+          description: Criada. Sem corpo; o id está no header `Location` (ex. `http://localhost:8080/ofertas/7`).
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '400':
+          description: |
+            Erro de validação (ver `OfertaInput`) ou imóvel inexistente: `{ "imovelId": "Imóvel não encontrado." }`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: |
+            `{ "imovelId": "Este imóvel não está disponível para ofertas." }` (status do imóvel diferente de
+            `DISPONIVEL`) ou `{ "imovelId": "Você já tem uma oferta em aberto para este imóvel." }`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              examples:
+                indisponivel:
+                  value:
+                    imovelId: Este imóvel não está disponível para ofertas.
+                duplicada:
+                  value:
+                    imovelId: Você já tem uma oferta em aberto para este imóvel.
+    get:
+      tags: [Ofertas]
+      summary: Lista todas as ofertas (admin)
+      operationId: listOfertas
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/StatusOferta'
+        - name: imovelId
+          in: query
+          schema:
+            type: integer
+        - name: usuarioId
+          in: query
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de ofertas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageOferta'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /ofertas/minhas:
+    get:
+      tags: [Ofertas]
+      summary: Lista as ofertas do usuário logado
+      operationId: listMinhasOfertas
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/StatusOferta'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de ofertas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageOferta'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /ofertas/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Ofertas]
+      summary: Busca uma oferta (dono ou admin)
+      operationId: getOferta
+      responses:
+        '200':
+          description: Oferta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oferta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Não existe ou pertence a outro usuário (corpo vazio)
+
+  /ofertas/{id}/cancelar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Ofertas]
+      summary: Cliente cancela a própria oferta
+      description: Só o dono (nem o admin cancela oferta alheia; ele usa `RECUSADA`) e só se `PENDENTE`/`EM_ESPERA`.
+      operationId: cancelOferta
+      responses:
+        '200':
+          description: Oferta cancelada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oferta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Não existe ou pertence a outro usuário (corpo vazio)
+        '409':
+          description: Oferta não está em aberto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              example:
+                status: Só ofertas pendentes ou em espera podem ser canceladas.
+
+  /ofertas/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [Ofertas]
+      summary: Admin aceita, recusa ou coloca a oferta em espera
+      description: |
+        Só para oferta em aberto (`PENDENTE`/`EM_ESPERA`).
+
+        **`ACEITA`** exige o imóvel `DISPONIVEL` e, na mesma transação:
+        - o imóvel passa a `RESERVADO`;
+        - todas as outras ofertas `PENDENTE` desse imóvel passam a `EM_ESPERA` (as que já estavam em espera continuam).
+
+        `EM_ESPERA` e `RECUSADA` só mudam a própria oferta (funcionam mesmo com o imóvel reservado).
+        Duas aceitações simultâneas no mesmo imóvel: a primeira vence e a segunda recebe `409`.
+      operationId: updateOfertaStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfertaStatusInput'
+      responses:
+        '200':
+          description: Oferta atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oferta'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Oferta não encontrada (corpo vazio)
+        '409':
+          description: |
+            `{ "status": "Só ofertas pendentes ou em espera podem ter o status alterado." }` (oferta já aceita, recusada
+            ou cancelada) ou, ao aceitar, `{ "status": "Só é possível aceitar ofertas de imóveis disponíveis (o imóvel está RESERVADO)." }`
+            (o status atual do imóvel vem na mensagem: `RESERVADO`, `ALUGADO` ou `VENDIDO`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              examples:
+                fechada:
+                  value:
+                    status: Só ofertas pendentes ou em espera podem ter o status alterado.
+                imovelIndisponivel:
+                  value:
+                    status: Só é possível aceitar ofertas de imóveis disponíveis (o imóvel está RESERVADO).
+
+  /contratos:
+    post:
+      tags: [Contratos]
+      summary: Admin cria o contrato de uma oferta aceita (gerando o PDF ou enviando um pronto)
+      description: |
+        A mesma rota tem **duas formas**, escolhidas pelo `Content-Type` da requisição:
+
+        | `Content-Type` | Forma | Corpo | `origem` do contrato |
+        |---|---|---|---|
+        | `application/json` | **Gerar**: a API monta o PDF a partir de um modelo | `ContratoGerarInput` | `GERADO` |
+        | `multipart/form-data` | **Upload**: o admin envia um PDF pronto (ex.: feito no Word) | `arquivo` + `ofertaId` | `UPLOAD` |
+
+        Outro `Content-Type` → `415`. As duas formas têm as mesmas regras e a mesma resposta:
+        - a oferta precisa existir (`400 { "ofertaId": "Oferta não encontrada." }`);
+        - precisa estar `ACEITA` (`409`);
+        - não pode ter outro contrato ativo, isto é, `AGUARDANDO_ASSINATURA` ou `ASSINADO` (`409`). Cancelar o contrato
+          também cancela a oferta, então não dá para criar outro contrato para ela;
+        - o contrato nasce `AGUARDANDO_ASSINATURA`, com `dataAprovacao` = agora.
+
+        **PDF gerado.** O texto vem do template `templates/contrato/contrato.html` (A4, com rodapé
+        "Oferta nº X - página N de M") e muda conforme o `tipo` da oferta:
+        - `ALUGUEL` → "Contrato de Locação de Imóvel": valor mensal, dia de vencimento e prazo em meses;
+        - `VENDA` → "Contrato de Compra e Venda de Imóvel": preço total, forma de pagamento, posse e escritura.
+
+        Os dados vêm da própria oferta: nome e e-mail do cliente; título, tipo, endereço completo (rua, número,
+        complemento, bairro, cidade/UF, CEP) e áreas do imóvel; `valorProposto`; data da oferta. A parte
+        CONTRATADA é o valor de `app.contratos.empresa` (padrão `Corretora de Imóveis`). O corpo JSON só completa
+        o texto (prazo, vencimento, forma de pagamento e cláusulas adicionais). Linhas vazias/campos ausentes do
+        imóvel são omitidos. O arquivo salvo se chama `contrato-oferta-{ofertaId}.pdf`.
+        Para ver o resultado antes de criar, use `POST /contratos/previa` com o mesmo corpo.
+
+        O modelo é genérico: revise o texto do template com um advogado antes de usar em produção.
+      operationId: createContrato
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContratoGerarInput'
+            examples:
+              aluguel:
+                summary: Gerar contrato de aluguel
+                value:
+                  ofertaId: 7
+                  prazoMeses: 12
+                  diaVencimento: 5
+                  formaPagamento: via boleto bancário
+                  clausulasAdicionais: |-
+                    1. É permitido animal de estimação.
+                    2. A pintura ao fim da locação fica por conta do locatário.
+              venda:
+                summary: Gerar contrato de venda
+                value:
+                  ofertaId: 8
+                  formaPagamento: à vista, na assinatura da escritura
+              minimo:
+                summary: Só a oferta (tudo com os valores padrão)
+                value:
+                  ofertaId: 7
+          multipart/form-data:
+            schema:
+              type: object
+              required: [arquivo, ofertaId]
+              properties:
+                arquivo:
+                  type: string
+                  format: binary
+                  description: |
+                    PDF não vazio: `Content-Type` da parte `application/pdf` **e** conteúdo começando com `%PDF-`.
+                    Nome original com no máximo 150 caracteres (usado como nome do download). Limite de tamanho:
+                    10MB (`spring.servlet.multipart.max-file-size`).
+                    Mensagens em `arquivo`: `O arquivo é obrigatório e não pode estar vazio.`,
+                    `O arquivo precisa ter um nome.`, `O nome do arquivo deve ter no máximo 150 caracteres.`,
+                    `Formato inválido. Envie um arquivo PDF.`, `O arquivo excede o tamanho máximo de 10MB.`
+                ofertaId:
+                  type: integer
+            encoding:
+              arquivo:
+                contentType: application/pdf
+      responses:
+        '201':
+          description: Criado. Sem corpo; o id está no header `Location` (ex. `http://localhost:8080/contratos/3`).
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '400':
+          description: |
+            Erro de validação no formato `{ campo: mensagem }`:
+            - comum: `{ "ofertaId": "Oferta não encontrada." }`;
+            - gerar (JSON): regras de `ContratoGerarInput` (ex. `{ "ofertaId": "A oferta é obrigatória." }`,
+              `{ "prazoMeses": "O prazo só se aplica a ofertas de aluguel." }`) e `{ "corpo": "JSON inválido ou ausente." }`;
+            - upload (multipart): arquivo inválido (mensagens em `arquivo`) ou parâmetro ausente
+              (`{ "ofertaId": "Campo obrigatório." }`, `{ "arquivo": "Campo obrigatório." }`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              examples:
+                gerar:
+                  value:
+                    prazoMeses: O prazo só se aplica a ofertas de aluguel.
+                upload:
+                  value:
+                    arquivo: Formato inválido. Envie um arquivo PDF.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: |
+            `{ "ofertaId": "Só é possível criar contrato para uma oferta aceita." }` ou
+            `{ "ofertaId": "Esta oferta já tem um contrato aguardando assinatura ou assinado." }`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+        '415':
+          description: '`Content-Type` diferente de `application/json` e `multipart/form-data` (corpo padrão do Spring)'
+    get:
+      tags: [Contratos]
+      summary: Lista todos os contratos (admin)
+      operationId: listContratos
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/StatusContrato'
+        - name: ofertaId
+          description: Todos os contratos da oferta (inclusive cancelados)
+          in: query
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de contratos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageContrato'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /contratos/previa:
+    post:
+      tags: [Contratos]
+      summary: Admin vê o PDF que seria gerado, sem salvar nada
+      description: |
+        Mesmo corpo (`ContratoGerarInput`) e mesmo PDF da forma "gerar" do `POST /contratos`, mas não cria
+        contrato nem grava arquivo. Diferente do `POST /contratos`, aceita oferta em **qualquer status** (dá
+        para conferir o texto antes de aceitar a oferta). O PDF não tem dados salvos: `dataEmissao` é a de agora.
+        No frontend: `fetch` com o token, `res.blob()` e `URL.createObjectURL(blob)` num `<iframe>`.
+      operationId: previewContrato
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContratoGerarInput'
+      responses:
+        '200':
+          description: 'O PDF (`Content-Disposition: inline; filename="previa-contrato-oferta-{ofertaId}.pdf"`)'
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: |
+            Regras de `ContratoGerarInput`, `{ "ofertaId": "Oferta não encontrada." }` ou
+            `{ "corpo": "JSON inválido ou ausente." }`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /contratos/meus:
+    get:
+      tags: [Contratos]
+      summary: Lista os contratos das ofertas do usuário logado
+      operationId: listMeusContratos
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/StatusContrato'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de contratos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageContrato'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /contratos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Contratos]
+      summary: Busca um contrato (cliente da oferta ou admin)
+      operationId: getContrato
+      responses:
+        '200':
+          description: Contrato
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contrato'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Não existe ou é de outro usuário (corpo vazio)
+
+  /contratos/{id}/pdf:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Contratos]
+      summary: Baixa o PDF do contrato (cliente da oferta ou admin)
+      description: Exige o token (não é uma URL pública). `Content-Disposition` inline com o nome original do arquivo.
+      operationId: downloadContratoPdf
+      responses:
+        '200':
+          description: O PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Não existe, é de outro usuário ou o arquivo sumiu do disco (corpo vazio)
+
+  /contratos/{id}/assinar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Contratos]
+      summary: Cliente assina o contrato
+      description: |
+        Só o cliente dono da oferta (para qualquer outro usuário, inclusive o admin, responde `404`).
+        Na mesma transação:
+        - contrato → `ASSINADO`, com `dataAssinatura` = agora (a oferta continua `ACEITA`);
+        - imóvel → `ALUGADO` (oferta `ALUGUEL`) ou `VENDIDO` (oferta `VENDA`);
+        - todas as outras ofertas em aberto (`PENDENTE`/`EM_ESPERA`) do imóvel → `RECUSADA`.
+      operationId: signContrato
+      responses:
+        '200':
+          description: Contrato assinado (`status = ASSINADO`, `dataAssinatura` preenchida)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contrato'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Não existe ou não é do usuário (corpo vazio)
+        '409':
+          description: Contrato não está aguardando assinatura
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              example:
+                status: Só contratos aguardando assinatura podem ser assinados.
+
+  /contratos/{id}/cancelar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Contratos]
+      summary: Admin cancela um contrato ainda não assinado (desistência do cliente)
+      description: |
+        Só contrato `AGUARDANDO_ASSINATURA`. Na mesma transação:
+        - contrato → `CANCELADO`;
+        - a oferta dele → `CANCELADA` (não recebe outro contrato; para recomeçar, é preciso uma nova oferta aceita);
+        - imóvel → `DISPONIVEL` (só se ainda estiver `RESERVADO`; um status trocado manualmente pelo admin é mantido);
+        - as outras ofertas `EM_ESPERA` do imóvel → `PENDENTE`, e o admin pode aceitar uma delas.
+      operationId: cancelContrato
+      responses:
+        '200':
+          description: Contrato cancelado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contrato'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Contrato não encontrado (corpo vazio)
+        '409':
+          description: Contrato já assinado ou cancelado (inclusive se a assinatura aconteceu ao mesmo tempo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              example:
+                status: Só contratos aguardando assinatura podem ser cancelados.
+
+  /favoritos:
+    get:
+      tags: [Favoritos]
+      summary: Lista os imóveis favoritos do usuário logado
+      operationId: listFavoritos
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de imóveis (com `fotos`). O `sort` usa os campos do imóvel (ex. `sort=titulo,asc`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageImovel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /favoritos/{imovelId}:
+    parameters:
+      - name: imovelId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Favoritos]
+      summary: Diz se o imóvel é favorito do usuário logado
+      operationId: isFavorito
+      responses:
+        '200':
+          description: '`favorito` é `false` também para imóvel inexistente'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [favorito]
+                properties:
+                  favorito:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Favoritos]
+      summary: Favorita o imóvel (idempotente)
+      operationId: addFavorito
+      responses:
+        '204':
+          description: Favoritado (ou já era)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Imóvel não encontrado (corpo vazio)
+    delete:
+      tags: [Favoritos]
+      summary: Desfavorita o imóvel (idempotente)
+      operationId: removeFavorito
+      responses:
+        '204':
+          description: Removido (ou não era favorito)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /email:
     get:
       tags: [E-mail]
@@ -1100,8 +1770,7 @@ components:
           type: string
           description: Texto livre (ex. venda, aluguel, venda/aluguel)
         status:
-          type: string
-          description: Texto livre (ex. disponivel, vendido, alugado)
+          $ref: '#/components/schemas/StatusImovel'
         dormitorios:
           type: integer
         banheiros:
@@ -1189,10 +1858,14 @@ components:
           maxLength: 255
           description: 'Mensagem: `A finalidade deve ter no máximo 255 caracteres.`'
         status:
-          type: string
+          allOf:
+            - $ref: '#/components/schemas/StatusImovel'
           nullable: true
-          maxLength: 255
-          description: 'Mensagem: `O status deve ter no máximo 255 caracteres.`'
+          default: DISPONIVEL
+          description: |
+            Opcional; omitido ou `null` vira `DISPONIVEL`. Fora do enum (inclusive o texto livre antigo, como
+            `"Disponível"`) → `{ "status": "Formato inválido." }`. O admin pode definir qualquer valor; o fluxo de
+            ofertas/contratos também muda este campo automaticamente.
         dormitorios:
           type: integer
           nullable: true
@@ -1414,6 +2087,219 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/User'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+
+    StatusImovel:
+      type: string
+      enum: [DISPONIVEL, RESERVADO, ALUGADO, VENDIDO]
+      description: |
+        Só `DISPONIVEL` recebe ofertas. Mudanças automáticas: oferta aceita → `RESERVADO`; contrato assinado →
+        `ALUGADO`/`VENDIDO`; contrato cancelado → `DISPONIVEL`. Valores antigos de texto livre foram convertidos para
+        `DISPONIVEL` na inicialização da API.
+
+    TipoOferta:
+      type: string
+      enum: [ALUGUEL, VENDA]
+
+    StatusOferta:
+      type: string
+      enum: [PENDENTE, ACEITA, EM_ESPERA, RECUSADA, CANCELADA]
+      description: '`PENDENTE`/`EM_ESPERA` = em aberto; `ACEITA`, `RECUSADA`, `CANCELADA` = finais.'
+
+    StatusContrato:
+      type: string
+      enum: [AGUARDANDO_ASSINATURA, ASSINADO, CANCELADO]
+
+    OrigemContrato:
+      type: string
+      enum: [GERADO, UPLOAD]
+      description: '`GERADO` = PDF montado pela API (`POST /contratos` com JSON); `UPLOAD` = PDF enviado pelo admin (multipart).'
+
+    ContratoGerarInput:
+      type: object
+      required: [ofertaId]
+      description: |
+        Corpo para gerar o PDF (`POST /contratos` com JSON e `POST /contratos/previa`). Cliente, imóvel, tipo e
+        valor vêm da oferta; os demais campos são opcionais e só completam o texto.
+      properties:
+        ofertaId:
+          type: integer
+          description: 'Mensagens: `A oferta é obrigatória.`, `Oferta não encontrada.`'
+        prazoMeses:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 360
+          default: 30
+          description: |
+            Só para oferta de **ALUGUEL**: prazo da locação em meses (padrão 30). Mensagens:
+            `O prazo deve ser de 1 a 360 meses.`; em oferta de venda: `O prazo só se aplica a ofertas de aluguel.`
+        diaVencimento:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 28
+          default: 10
+          description: |
+            Só para oferta de **ALUGUEL**: dia do mês do vencimento (padrão 10; até 28 para existir em todos os meses).
+            Mensagens: `O dia de vencimento deve ser de 1 a 28.`; em oferta de venda:
+            `O dia de vencimento só se aplica a ofertas de aluguel.`
+        formaPagamento:
+          type: string
+          nullable: true
+          maxLength: 500
+          default: conforme acordado entre as partes
+          description: |
+            Completa a frase "... a ser pago <formaPagamento>." (ex. `via boleto bancário`,
+            `à vista, na assinatura da escritura`). Vazio usa o padrão.
+            Mensagem: `A forma de pagamento deve ter no máximo 500 caracteres.`
+        clausulasAdicionais:
+          type: string
+          nullable: true
+          maxLength: 4000
+          description: |
+            Texto livre que vira a seção "5. Das cláusulas adicionais" (omitida se vazio). Quebras de linha são
+            preservadas; HTML é exibido como texto (não é interpretado).
+            Mensagem: `As cláusulas adicionais devem ter no máximo 4000 caracteres.`
+
+    ImovelResumo:
+      type: object
+      properties:
+        id:
+          type: integer
+        titulo:
+          type: string
+        precoVenda:
+          type: number
+          nullable: true
+        precoAluguel:
+          type: number
+          nullable: true
+        status:
+          $ref: '#/components/schemas/StatusImovel'
+
+    Oferta:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 7
+        imovel:
+          $ref: '#/components/schemas/ImovelResumo'
+        usuario:
+          $ref: '#/components/schemas/User'
+        tipo:
+          $ref: '#/components/schemas/TipoOferta'
+        valorProposto:
+          type: number
+          example: 350000.5
+        mensagem:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/StatusOferta'
+        createdAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/LocalDateTime'
+
+    OfertaInput:
+      type: object
+      required: [imovelId, tipo, valorProposto]
+      properties:
+        imovelId:
+          type: integer
+          description: 'Mensagens: `O imóvel é obrigatório.`, `Imóvel não encontrado.`'
+        tipo:
+          allOf:
+            - $ref: '#/components/schemas/TipoOferta'
+          description: 'Mensagens: `O tipo da oferta é obrigatório.`; fora do enum → `Formato inválido.`'
+        valorProposto:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 9999999999999.99
+          description: |
+            Até 13 dígitos inteiros e 2 casas decimais. Mensagens: `O valor proposto é obrigatório.`,
+            `O valor proposto deve ser maior que zero.`,
+            `O valor proposto deve ter até 13 dígitos inteiros e 2 casas decimais.`
+        mensagem:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: |
+            Opcional; espaços nas pontas são removidos e vazio vira `null`.
+            Mensagem: `A mensagem deve ter no máximo 2000 caracteres.`
+      example:
+        imovelId: 12
+        tipo: VENDA
+        valorProposto: 350000.5
+        mensagem: Pago à vista.
+
+    OfertaStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ACEITA, EM_ESPERA, RECUSADA]
+          description: |
+            Mensagens: `O status é obrigatório.`, `Status inválido. Use ACEITA, EM_ESPERA ou RECUSADA.`
+            (para `PENDENTE`/`CANCELADA`); fora do enum `StatusOferta` → `Formato inválido.`
+
+    Contrato:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+        oferta:
+          $ref: '#/components/schemas/Oferta'
+        status:
+          $ref: '#/components/schemas/StatusContrato'
+        origem:
+          $ref: '#/components/schemas/OrigemContrato'
+        nomeArquivo:
+          type: string
+          description: 'Nome do download: o original no upload; `contrato-oferta-{ofertaId}.pdf` no gerado'
+          example: contrato-oferta-7.pdf
+        urlPdf:
+          type: string
+          format: uri
+          description: '`GET /contratos/{id}/pdf` (exige token)'
+          example: http://localhost:8080/contratos/3/pdf
+        dataAprovacao:
+          $ref: '#/components/schemas/LocalDateTime'
+        dataAssinatura:
+          allOf:
+            - $ref: '#/components/schemas/LocalDateTime'
+          nullable: true
+          description: '`null` até o cliente assinar'
+        createdAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        updatedAt:
+          $ref: '#/components/schemas/LocalDateTime'
+
+    PageOferta:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Oferta'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+
+    PageContrato:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Contrato'
         page:
           $ref: '#/components/schemas/PageMetadata'
 
